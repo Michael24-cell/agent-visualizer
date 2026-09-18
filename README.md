@@ -1,6 +1,6 @@
 # Visual Multi-Agent Harness
 
-Local-first control plane for planning, supervising, and verifying coding-agent work. This repository is currently at **Increment 0: Repository foundation**.
+Local-first control plane for planning, supervising, and verifying coding-agent work. This repository is currently at **Increment 1: Domain events and simulated runtime**.
 
 ## Requirements
 
@@ -27,6 +27,8 @@ npm run verify
 
 Run migrations directly with `npm run db:migrate`. Migrations are transactional and safe to run repeatedly.
 
+The authenticated local service can execute deterministic development scenarios with `POST /api/simulated-runs` and retrieve the resulting authoritative projection with `GET /api/runs/:runId`. The supported fixture scenarios cover success, validation failure, approval, cancellation, and disconnect reconciliation.
+
 ## Boundaries that must remain stable
 
 - Tasks are durable; runtime processes are replaceable workers.
@@ -39,4 +41,4 @@ Run migrations directly with `npm run db:migrate`. Migrations are transactional 
 - Category color and execution status are separate visual dimensions.
 - One agent is preferred unless parallel work is justified.
 
-The workspaces form one deployable modular monolith. `apps/client` owns presentation, `apps/service` owns the local application boundary, and packages isolate contracts, configuration, and persistence dependencies.
+The workspaces form one deployable modular monolith. `apps/client` owns presentation, `apps/service` owns the local application boundary, `packages/domain` owns pure transitions and projections, and packages isolate contracts, configuration, persistence, and runtime adapters.

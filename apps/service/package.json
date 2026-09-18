@@ -13,7 +13,9 @@
   "dependencies": {
     "@harness/config": "*",
     "@harness/contracts": "*",
+    "@harness/domain": "*",
     "@harness/persistence": "*",
+    "@harness/runtime-simulated": "*",
     "fastify": "^5.0.0"
   }
 }

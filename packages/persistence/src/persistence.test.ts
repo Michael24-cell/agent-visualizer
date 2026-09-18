@@ -25,8 +25,8 @@ describe('persistence foundation', () => {
     const databasePath = join(directory, 'test.db');
 
     const firstConnection = openHarnessDatabase(databasePath);
-    expect(firstConnection.migrationCount).toBe(1);
-    expect(runMigrations(firstConnection.database)).toBe(1);
+    expect(firstConnection.migrationCount).toBe(2);
+    expect(runMigrations(firstConnection.database)).toBe(2);
 
     const record = {
       id: 'increment-0',
@@ -37,7 +37,7 @@ describe('persistence foundation', () => {
     firstConnection.close();
 
     const secondConnection = openHarnessDatabase(databasePath);
-    expect(getMigrationCount(secondConnection.database)).toBe(1);
+    expect(getMigrationCount(secondConnection.database)).toBe(2);
     expect(getFoundationRecord(secondConnection.database, record.id)).toEqual(
       record,
     );

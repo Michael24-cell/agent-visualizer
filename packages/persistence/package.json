@@ -8,6 +8,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@harness/contracts": "*",
+    "@harness/domain": "*",
     "better-sqlite3": "^12.0.0"
+  },
+  "devDependencies": {
+    "@harness/runtime-simulated": "*"
   }
 }

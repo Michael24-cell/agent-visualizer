@@ -59,8 +59,44 @@ describe('local service boundary', () => {
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json()).toMatchObject({
       record: { id: 'increment-0' },
-      migrationCount: 1,
+      migrationCount: 2,
     });
+
+    await service.close();
+  });
+
+  it('executes and retrieves a persisted simulated run', async () => {
+    const config = testConfig();
+    const service = createService(config);
+    const headers = {
+      origin: 'http://127.0.0.1:5173',
+      'x-harness-session': config.sessionToken,
+    };
+
+    const started = await service.inject({
+      method: 'POST',
+      url: '/api/simulated-runs',
+      headers,
+      payload: { scenario: 'disconnect-reconciliation' },
+    });
+    expect(started.statusCode).toBe(201);
+    const projection = started.json<{
+      runId: string;
+      run: { state: string };
+      runtimeConnection: string;
+    }>();
+    expect(projection).toMatchObject({
+      run: { state: 'completed' },
+      runtimeConnection: 'reconciled',
+    });
+
+    const retrieved = await service.inject({
+      method: 'GET',
+      url: `/api/runs/${projection.runId}`,
+      headers,
+    });
+    expect(retrieved.statusCode).toBe(200);
+    expect(retrieved.json()).toEqual(started.json());
 
     await service.close();
   });

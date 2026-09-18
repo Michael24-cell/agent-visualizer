@@ -1,18 +1,34 @@
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
+import { z } from 'zod';
 import type { AppConfig } from '@harness/config';
 import {
+  AgentInstanceIdSchema,
   FoundationStatusSchema,
+  PlanVersionIdSchema,
+  RunIdSchema,
   ServiceHealthSchema,
+  TaskIdSchema,
   type FoundationRecord,
 } from '@harness/contracts';
+import { RunProjectionSchema, executeRuntimeRun } from '@harness/domain';
 import {
+  SqliteEventStore,
   getFoundationRecord,
   openHarnessDatabase,
   saveFoundationRecord,
 } from '@harness/persistence';
+import {
+  SimulatedRuntimeAdapter,
+  SimulatedScenarioIdSchema,
+} from '@harness/runtime-simulated';
 
 const FOUNDATION_RECORD_ID = 'increment-0';
+const StartSimulatedRunSchema = z.strictObject({
+  scenario: SimulatedScenarioIdSchema,
+  goal: z.string().min(1).optional(),
+  taskTitle: z.string().min(1).optional(),
+});
 
 function tokensMatch(expected: string, presented: string): boolean {
   const expectedBytes = Buffer.from(expected);
@@ -27,6 +43,8 @@ function tokensMatch(expected: string, presented: string): boolean {
 export function createService(config: AppConfig) {
   const service = Fastify({ logger: true });
   const store = openHarnessDatabase(config.databasePath);
+  const eventStore = new SqliteEventStore(store.database);
+  eventStore.rebuildAllProjections();
   const foundationRecord: FoundationRecord = {
     id: FOUNDATION_RECORD_ID,
     value: 'Repository foundation ready',
@@ -74,6 +92,49 @@ export function createService(config: AppConfig) {
       record,
       migrationCount: store.migrationCount,
     });
+  });
+
+  service.post('/api/simulated-runs', async (request, reply) => {
+    const command = StartSimulatedRunSchema.safeParse(request.body);
+    if (!command.success) {
+      return reply.code(400).send({
+        error: 'Invalid simulated run command.',
+        issues: command.error.issues.map((issue) => issue.message),
+      });
+    }
+
+    const suffix = randomUUID();
+    const scenario = command.data.scenario;
+    const projection = await executeRuntimeRun(
+      new SimulatedRuntimeAdapter(),
+      eventStore,
+      {
+        runId: RunIdSchema.parse(`run_${suffix}`),
+        planVersionId: PlanVersionIdSchema.parse(`planv_${suffix}`),
+        taskId: TaskIdSchema.parse(`task_${suffix}`),
+        agentInstanceId: AgentInstanceIdSchema.parse(`agent_${suffix}`),
+        goal: command.data.goal ?? `Exercise ${scenario}.`,
+        taskTitle: command.data.taskTitle ?? `Fixture: ${scenario}`,
+        runtimeConfiguration: { scenario },
+      },
+    );
+
+    return reply.code(201).send(RunProjectionSchema.parse(projection));
+  });
+
+  service.get('/api/runs/:runId', async (request, reply) => {
+    const parameters = z
+      .strictObject({ runId: RunIdSchema })
+      .safeParse(request.params);
+    if (!parameters.success) {
+      return reply.code(400).send({ error: 'Invalid run ID.' });
+    }
+
+    const projection = eventStore.getProjection(parameters.data.runId);
+    if (!projection) {
+      return reply.code(404).send({ error: 'Run was not found.' });
+    }
+    return RunProjectionSchema.parse(projection);
   });
 
   service.addHook('onClose', async () => {

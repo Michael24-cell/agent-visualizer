@@ -18,6 +18,47 @@ const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'events-and-run-projections',
+    sql: `
+      CREATE TABLE events (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        type TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        occurred_at TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        event_core_json TEXT NOT NULL,
+        provider_metadata_json TEXT,
+        UNIQUE (run_id, sequence)
+      );
+
+      CREATE INDEX events_run_sequence_idx
+        ON events (run_id, sequence);
+
+      CREATE TRIGGER events_are_append_only_update
+      BEFORE UPDATE ON events
+      BEGIN
+        SELECT RAISE(ABORT, 'events are append-only');
+      END;
+
+      CREATE TRIGGER events_are_append_only_delete
+      BEFORE DELETE ON events
+      BEGIN
+        SELECT RAISE(ABORT, 'events are append-only');
+      END;
+
+      CREATE TABLE run_projections (
+        run_id TEXT PRIMARY KEY,
+        last_sequence INTEGER NOT NULL CHECK (last_sequence > 0),
+        projection_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function runMigrations(database: Database.Database): number {

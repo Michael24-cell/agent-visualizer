@@ -50,3 +50,4 @@ export function getFoundationRecord(
 }
 
 export { getMigrationCount, runMigrations } from './migrations.js';
+export * from './event-store.js';

@@ -6,7 +6,9 @@
   "workspaces": [
     "packages/contracts",
     "packages/config",
+    "packages/domain",
     "packages/persistence",
+    "packages/runtime-simulated",
     "apps/service",
     "apps/client"
   ],
