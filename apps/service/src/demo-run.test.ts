@@ -173,4 +173,64 @@ describe('complete simulated product loop', () => {
     expect(recovered.activeRun?.projection).toEqual(completedProjection);
     await restartedService.close();
   });
+
+  it('keeps the newest repeated run selected after projection rebuild and restart', async () => {
+    const config = fixtureConfig();
+    const headers = authorizedHeaders(config);
+    const service = createService(config);
+
+    const launch = async () => {
+      const response = await service.inject({
+        method: 'POST',
+        url: '/api/demo-runs',
+        headers,
+        payload: { planVersionId: 'planv_harness-demo-v1' },
+      });
+      expect(response.statusCode).toBe(202);
+      return LaunchDemoRunResponseSchema.parse(response.json()).runId;
+    };
+
+    const firstRunId = await launch();
+    const firstSnapshotResponse = await service.inject({
+      method: 'GET',
+      url: `/api/demo-runs/${firstRunId}`,
+      headers,
+    });
+    const firstSnapshot = DemoRunSnapshotSchema.parse(
+      firstSnapshotResponse.json(),
+    );
+    const cancelResponse = await service.inject({
+      method: 'POST',
+      url: `/api/demo-runs/${firstRunId}/cancel`,
+      headers,
+      payload: { expectedSequence: firstSnapshot.projection.lastSequence },
+    });
+    expect(cancelResponse.statusCode).toBe(200);
+    expect(DemoRunSnapshotSchema.parse(cancelResponse.json()).phase).toBe(
+      'cancelled',
+    );
+
+    const newestRunId = await launch();
+    const currentResponse = await service.inject({
+      method: 'GET',
+      url: '/api/workspace',
+      headers,
+    });
+    expect(
+      WorkspaceResponseSchema.parse(currentResponse.json()).activeRun
+        ?.projection.runId,
+    ).toBe(newestRunId);
+    await service.close();
+
+    const restartedService = createService(config);
+    const recoveredResponse = await restartedService.inject({
+      method: 'GET',
+      url: '/api/workspace',
+      headers,
+    });
+    const recovered = WorkspaceResponseSchema.parse(recoveredResponse.json());
+    expect(recovered.activeRun?.projection.runId).toBe(newestRunId);
+    expect(recovered.activeRun?.phase).toBe('interface_active');
+    await restartedService.close();
+  });
 });

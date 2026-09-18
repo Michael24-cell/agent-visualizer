@@ -1,13 +1,21 @@
 import {
   DemoRunSnapshotSchema,
-  DomainEventSchema,
   LaunchDemoRunResponseSchema,
   WorkspaceResponseSchema,
   type DemoRunSnapshot,
-  type DomainEvent,
   type RunId,
   type WorkspaceResponse,
 } from '@harness/contracts';
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 async function request(input: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(input, {
@@ -20,7 +28,8 @@ async function request(input: string, init?: RequestInit): Promise<Response> {
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as
       { error?: string } | undefined;
-    throw new Error(
+    throw new ApiError(
+      response.status,
       body?.error ?? `The local service returned ${response.status}.`,
     );
   }
@@ -96,24 +105,4 @@ export async function cancelDemoRun(
       })
     ).json(),
   );
-}
-
-export async function readEventsAfter(
-  runId: RunId,
-  after: number,
-): Promise<DomainEvent[]> {
-  const response = await request(`/api/runs/${runId}/events?after=${after}`, {
-    headers: { accept: 'text/event-stream' },
-  });
-  const text = await response.text();
-  const events: DomainEvent[] = [];
-  for (const block of text.split('\n\n')) {
-    if (!block.includes('event: domain-event')) continue;
-    const data = block
-      .split('\n')
-      .find((line) => line.startsWith('data: '))
-      ?.slice(6);
-    if (data) events.push(DomainEventSchema.parse(JSON.parse(data)));
-  }
-  return events;
 }

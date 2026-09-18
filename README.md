@@ -27,7 +27,7 @@ npm run verify
 
 Run migrations directly with `npm run db:migrate`. Migrations are transactional and safe to run repeatedly.
 
-The authenticated local service can execute deterministic development scenarios with `POST /api/simulated-runs` and retrieve the resulting authoritative projection with `GET /api/runs/:runId`. The visual product loop uses `POST /api/demo-runs`, typed advancement and approval commands, cursor-based event delivery at `GET /api/runs/:runId/events`, and `GET /api/workspace` for reload recovery. The browser never owns execution status.
+The authenticated local service can execute deterministic development scenarios with `POST /api/simulated-runs` and retrieve the resulting authoritative projection with `GET /api/runs/:runId`. The visual product loop uses `POST /api/demo-runs`, typed advancement and approval commands, bounded cursor replay at `GET /api/runs/:runId/events`, and authoritative persisted-state refresh through `GET /api/workspace`. The replay endpoint returns events after a supplied cursor; it is useful recovery infrastructure, not an open live stream. The browser never owns execution status.
 
 ## Boundaries that must remain stable
 

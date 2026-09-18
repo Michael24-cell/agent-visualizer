@@ -1,7 +1,9 @@
 import type {
   DemoRunSnapshot,
   DomainEvent,
+  RunProjection,
   TaskState,
+  ValidationResult,
   WorkspaceFixture,
 } from '@harness/contracts';
 
@@ -25,6 +27,29 @@ export interface TaskViewModel {
   readonly agentState?: string;
   readonly currentActivity: string;
   readonly evidence: readonly string[];
+}
+
+export interface ReviewViewModel {
+  readonly state:
+    | 'prelaunch'
+    | 'in_progress'
+    | 'attention'
+    | 'ready'
+    | 'failed'
+    | 'cancelled';
+  readonly mark: string;
+  readonly title: string;
+  readonly description: string;
+  readonly hasDiffArtifact: boolean;
+  readonly warningTitle: string;
+  readonly warningDescription: string;
+  readonly warningState: 'none' | 'unresolved' | 'resolved';
+}
+
+export interface AttentionViewModel {
+  readonly title: string;
+  readonly detail: string;
+  readonly taskKey?: FixtureTaskKey;
 }
 
 const stateLabels: Record<TaskState, string> = {
@@ -78,6 +103,23 @@ function activityFor(taskState: TaskState, key: FixtureTaskKey): string {
   return active[taskState];
 }
 
+function latestTaskActivity(
+  events: readonly DomainEvent[],
+  taskId: string,
+): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (
+      event?.taskId === taskId &&
+      (event.type === 'task.state_changed' ||
+        event.type === 'agent.state_changed')
+    ) {
+      return event.payload.reason;
+    }
+  }
+  return undefined;
+}
+
 export function buildTaskViewModels(
   workspace: WorkspaceFixture,
   snapshot?: DemoRunSnapshot,
@@ -125,13 +167,211 @@ export function buildTaskViewModels(
       dependsOn: fixtureTask.dependsOn,
       agentProfile: fixtureTask.agentProfile,
       ...(agent ? { agentState: agent.state.replaceAll('_', ' ') } : {}),
-      currentActivity: activityFor(state, fixtureTask.key),
+      currentActivity:
+        (task
+          ? latestTaskActivity(snapshot?.events ?? [], task.id)
+          : undefined) ?? activityFor(state, fixtureTask.key),
       evidence,
     };
   });
 }
 
-export function describeEvent(event: DomainEvent): string {
+function latestValidationsByIdentity(
+  validations: readonly ValidationResult[],
+): Map<string, ValidationResult> {
+  const latest = new Map<string, ValidationResult>();
+  for (const validation of [...validations].sort((left, right) =>
+    left.startedAt.localeCompare(right.startedAt),
+  )) {
+    latest.set(
+      `${validation.taskId ?? 'run'}:${validation.validatorType}`,
+      validation,
+    );
+  }
+  return latest;
+}
+
+export function buildReviewViewModel(
+  snapshot?: DemoRunSnapshot,
+): ReviewViewModel {
+  const validations = snapshot
+    ? Object.values(snapshot.projection.validations)
+    : [];
+  const failedValidations = validations.filter(
+    (validation) => validation.status === 'failed',
+  );
+  const latestValidations = latestValidationsByIdentity(validations);
+  const unresolvedFailures = failedValidations.filter((validation) => {
+    const latest = latestValidations.get(
+      `${validation.taskId ?? 'run'}:${validation.validatorType}`,
+    );
+    return latest?.status !== 'passed';
+  });
+  const warningState: ReviewViewModel['warningState'] = failedValidations.length
+    ? unresolvedFailures.length
+      ? 'unresolved'
+      : 'resolved'
+    : 'none';
+  const warningCount =
+    warningState === 'unresolved'
+      ? unresolvedFailures.length
+      : failedValidations.length;
+  const warningValidation =
+    unresolvedFailures.at(-1) ?? failedValidations.at(-1);
+  const warningTitle =
+    warningState === 'none'
+      ? 'No validation warnings recorded'
+      : `${warningCount} ${
+          warningState === 'resolved' ? 'resolved' : 'unresolved'
+        } validation warning${warningCount === 1 ? '' : 's'}`;
+  const warningDescription =
+    warningValidation?.outputSummary ??
+    'A validation warning will remain visible here until a later passing result supersedes it.';
+  const shared = {
+    hasDiffArtifact:
+      snapshot !== undefined &&
+      Object.values(snapshot.projection.artifacts).some(
+        (artifact) => artifact.type === 'diff',
+      ),
+    warningTitle,
+    warningDescription,
+    warningState,
+  } as const;
+
+  if (!snapshot) {
+    return {
+      ...shared,
+      state: 'prelaunch',
+      mark: '○',
+      title: 'Review begins after launch',
+      description:
+        'Launch the approved plan to collect validation, artifact, and diff evidence.',
+    };
+  }
+  if (snapshot.phase === 'completed') {
+    return {
+      ...shared,
+      state: 'ready',
+      mark: '✓',
+      title: 'Ready for human review',
+      description:
+        'Both task contracts passed their latest blocking validations. Earlier failures remain visible in history.',
+    };
+  }
+  if (snapshot.phase === 'repair_required') {
+    return {
+      ...shared,
+      state: 'attention',
+      mark: '!',
+      title: 'Repair required before review',
+      description:
+        'A blocking validation is still unresolved. Apply the bounded repair, then review the new evidence.',
+    };
+  }
+  if (snapshot.phase === 'failed') {
+    return {
+      ...shared,
+      state: 'failed',
+      mark: '×',
+      title: 'Run failed and remains blocked',
+      description:
+        'A required action was denied or failed. Preserved events and evidence remain available for review.',
+    };
+  }
+  if (snapshot.phase === 'cancelled') {
+    return {
+      ...shared,
+      state: 'cancelled',
+      mark: '—',
+      title: 'Run cancelled with work preserved',
+      description:
+        'No further work will start. Existing events, artifacts, and validation evidence remain inspectable.',
+    };
+  }
+  return {
+    ...shared,
+    state: snapshot.projection.attentionRequired ? 'attention' : 'in_progress',
+    mark: snapshot.projection.attentionRequired ? '!' : '…',
+    title: snapshot.projection.attentionRequired
+      ? 'Run needs a decision'
+      : 'Run is in progress',
+    description: snapshot.projection.attentionRequired
+      ? 'Resolve the highlighted approval or task repair before the run can continue.'
+      : 'The deterministic run is collecting task, validation, and artifact evidence.',
+  };
+}
+
+function fixtureKeyForTask(
+  workspace: WorkspaceFixture,
+  projection: RunProjection,
+  taskId: string | undefined,
+): FixtureTaskKey | undefined {
+  if (!taskId) return undefined;
+  const task = projection.tasks[taskId];
+  return workspace.plan.tasks.find(
+    (candidate) => candidate.title === task?.title,
+  )?.key;
+}
+
+export function buildAttentionViewModel(
+  workspace: WorkspaceFixture,
+  snapshot?: DemoRunSnapshot,
+): AttentionViewModel | undefined {
+  if (!snapshot?.projection.attentionRequired) return undefined;
+  const approval = Object.values(snapshot.projection.approvals).find(
+    (candidate) => candidate.state === 'requested',
+  );
+  if (approval) {
+    const taskKey = fixtureKeyForTask(
+      workspace,
+      snapshot.projection,
+      approval.taskId,
+    );
+    return {
+      title: `Approval needed: ${approval.requestedAction}`,
+      detail: approval.reason,
+      ...(taskKey ? { taskKey } : {}),
+    };
+  }
+  const repairTask = Object.values(snapshot.projection.tasks).find(
+    (task) => task.state === 'repair_pending',
+  );
+  const failedValidation = Object.values(snapshot.projection.validations)
+    .filter(
+      (validation) =>
+        validation.taskId === repairTask?.id && validation.status === 'failed',
+    )
+    .at(-1);
+  if (repairTask) {
+    const taskKey = fixtureKeyForTask(
+      workspace,
+      snapshot.projection,
+      repairTask.id,
+    );
+    return {
+      title: `Repair needed: ${repairTask.title}`,
+      detail:
+        failedValidation?.outputSummary ??
+        'A blocking validation must be repaired before the run can continue.',
+      ...(taskKey ? { taskKey } : {}),
+    };
+  }
+  return {
+    title: 'Run needs attention',
+    detail: 'Review the current run evidence before continuing.',
+  };
+}
+
+export function isTerminalRun(snapshot?: DemoRunSnapshot): boolean {
+  return Boolean(
+    snapshot && ['completed', 'failed', 'cancelled'].includes(snapshot.phase),
+  );
+}
+
+export function describeEvent(
+  event: DomainEvent,
+  projection?: RunProjection,
+): string {
   switch (event.type) {
     case 'run.created':
       return 'Created the run from approved plan v1.';
@@ -157,10 +397,8 @@ export function describeEvent(event: DomainEvent): string {
       return `Started ${event.payload.validation.validatorType}.`;
     case 'validation.completed':
       return `${
-        event.payload.validationId
-          .replace(/^validation_/, '')
-          .split('_')
-          .at(-1) ?? 'Validation'
+        projection?.validations[event.payload.validationId]?.validatorType ??
+        'Validation'
       } ${event.payload.to}: ${event.payload.outputSummary}`;
     case 'artifact.produced':
       return `Produced a validated ${event.payload.artifact.type} artifact.`;

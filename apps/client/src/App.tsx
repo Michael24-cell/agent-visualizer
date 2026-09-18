@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DemoRunSnapshot, WorkspaceResponse } from '@harness/contracts';
 import {
+  ApiError,
   advanceDemoRun,
   cancelDemoRun,
   decideApproval,
   launchDemoRun,
   readDemoRun,
-  readEventsAfter,
   readWorkspace,
 } from './api';
 import {
+  buildAttentionViewModel,
+  buildReviewViewModel,
   buildTaskViewModels,
   describeEvent,
+  isTerminalRun,
   type FixtureTaskKey,
   type TaskViewModel,
 } from './model';
@@ -173,7 +176,7 @@ export function TaskList({
 
 export function TaskInspector({ task }: { task: TaskViewModel }) {
   return (
-    <aside className={`inspector category-${task.category}`} aria-live="polite">
+    <aside className={`inspector category-${task.category}`}>
       <div className="inspector-heading">
         <div>
           <p className="kicker">Selected task</p>
@@ -223,7 +226,13 @@ export function TaskInspector({ task }: { task: TaskViewModel }) {
       </div>
       <div className="inspector-detail">
         <h4>Acceptance</h4>
-        <ul className="check-list">
+        <ul
+          className={`check-list ${
+            task.state === 'completed' && task.evidence.length
+              ? 'is-evidenced'
+              : ''
+          }`}
+        >
           {task.acceptanceCriteria.map((criterion) => (
             <li key={criterion}>{criterion}</li>
           ))}
@@ -277,18 +286,20 @@ function RunControls({
   onAdvance,
   onDecision,
   onCancel,
+  onLaunchNew,
 }: {
   snapshot: DemoRunSnapshot;
   busy: boolean;
   onAdvance: () => void;
   onDecision: (decision: 'approved' | 'denied') => void;
   onCancel: () => void;
+  onLaunchNew: () => void;
 }) {
   const approval = Object.values(snapshot.projection.approvals).find(
     (item) => item.state === 'requested',
   );
   return (
-    <div className="run-controls">
+    <div className="run-controls" id="run-controls">
       <div>
         <p className="kicker">Next supervised step</p>
         <strong>{snapshot.nextStepLabel}</strong>
@@ -334,6 +345,16 @@ function RunControls({
             Cancel run
           </button>
         ) : null}
+        {isTerminalRun(snapshot) ? (
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={busy}
+            onClick={onLaunchNew}
+          >
+            Launch a new run <Icon name="arrow" />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -347,26 +368,25 @@ export function App() {
   const [notice, setNotice] = useState('Loading the local project.');
   const [actionError, setActionError] = useState<string>();
 
-  const load = async (reconnecting = false) => {
+  const selectAttentionTask = (nextData: WorkspaceResponse) => {
+    const attention = buildAttentionViewModel(
+      nextData.workspace,
+      nextData.activeRun,
+    );
+    if (attention?.taskKey) setSelectedTask(attention.taskKey);
+  };
+
+  const load = async (refreshing = false) => {
     try {
       const data = await readWorkspace();
-      if (reconnecting && data.activeRun) {
-        const unseen = await readEventsAfter(
-          data.activeRun.projection.runId,
-          data.activeRun.projection.lastSequence,
-        );
-        setNotice(
-          unseen.length
-            ? `Reconnected with ${unseen.length} new event${unseen.length === 1 ? '' : 's'}.`
-            : `Reconnected at event ${data.activeRun.projection.lastSequence} without duplicates.`,
-        );
-      } else {
-        setNotice(
-          data.activeRun
+      setNotice(
+        refreshing && data.activeRun
+          ? `Refreshed from persisted state at event ${data.activeRun.projection.lastSequence}.`
+          : data.activeRun
             ? `Recovered ${data.activeRun.phase.replaceAll('_', ' ')} from persisted events.`
             : 'Project context is ready for plan review.',
-        );
-      }
+      );
+      selectAttentionTask(data);
       setLoadState({ phase: 'ready', data });
       setActionError(undefined);
     } catch (error) {
@@ -385,6 +405,11 @@ export function App() {
     void readWorkspace()
       .then((data) => {
         if (!active) return;
+        const attention = buildAttentionViewModel(
+          data.workspace,
+          data.activeRun,
+        );
+        if (attention?.taskKey) setSelectedTask(attention.taskKey);
         setLoadState({ phase: 'ready', data });
         setNotice(
           data.activeRun
@@ -417,6 +442,8 @@ export function App() {
 
   const updateRun = (next: DemoRunSnapshot, message: string) => {
     if (loadState.phase !== 'ready') return;
+    const attention = buildAttentionViewModel(loadState.data.workspace, next);
+    if (attention?.taskKey) setSelectedTask(attention.taskKey);
     setLoadState({
       phase: 'ready',
       data: { ...loadState.data, activeRun: next },
@@ -433,9 +460,27 @@ export function App() {
     try {
       updateRun(await action(), message);
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'The command could not run.',
-      );
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          const refreshed = await readWorkspace();
+          selectAttentionTask(refreshed);
+          setLoadState({ phase: 'ready', data: refreshed });
+          setActionError(undefined);
+          setNotice(
+            'The run changed before that command completed. Refreshed from persisted state.',
+          );
+        } catch (refreshError) {
+          setActionError(
+            refreshError instanceof Error
+              ? refreshError.message
+              : 'The run changed, but its latest state could not be refreshed.',
+          );
+        }
+      } else {
+        setActionError(
+          error instanceof Error ? error.message : 'The command could not run.',
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -446,7 +491,7 @@ export function App() {
     setBusy(true);
     try {
       const runId = await launchDemoRun(data.workspace.plan.id);
-      await readEventsAfter(runId, 0);
+      setSelectedTask('interface');
       updateRun(
         await readDemoRun(runId),
         'Run launched. The interface task is now active.',
@@ -496,12 +541,9 @@ export function App() {
         (approval) => approval.state === 'requested',
       )
     : undefined;
-  const failedValidation = snapshot
-    ? Object.values(snapshot.projection.validations).find(
-        (validation) => validation.status === 'failed',
-      )
-    : undefined;
-  const completed = snapshot?.phase === 'completed';
+  const terminal = isTerminalRun(snapshot);
+  const review = buildReviewViewModel(snapshot);
+  const attention = buildAttentionViewModel(workspace, snapshot);
 
   return (
     <div className="app-shell">
@@ -517,15 +559,30 @@ export function App() {
             </a>
           ))}
         </nav>
-        <button
-          type="button"
-          className="connection-badge"
-          onClick={() => void load(true)}
-          aria-label="Reconnect to local event stream"
-        >
-          <span aria-hidden="true" /> Local · event{' '}
-          {snapshot?.projection.lastSequence ?? 0}
-        </button>
+        <div className="topbar-status">
+          {attention ? (
+            <a
+              className="attention-chip"
+              href="#run"
+              onClick={() => {
+                if (attention.taskKey) setSelectedTask(attention.taskKey);
+              }}
+            >
+              <span aria-hidden="true">!</span> {attention.title}
+            </a>
+          ) : null}
+          <button
+            type="button"
+            className="connection-badge"
+            onClick={() => void load(true)}
+            aria-label="Refresh run state from persisted events"
+          >
+            <span aria-hidden="true" />
+            <span className="refresh-copy">Refresh run state</span>
+            <span aria-hidden="true">·</span>
+            {snapshot?.projection.lastSequence ?? 0}
+          </button>
+        </div>
       </header>
 
       <main id="main-content">
@@ -664,7 +721,10 @@ export function App() {
                   Accessible list
                 </button>
               </div>
-              <span>{workspace.plan.agentCountRationale}</span>
+              <div className="agent-rationale">
+                <span>Why two agents</span>
+                <p>{workspace.plan.agentCountRationale}</p>
+              </div>
             </div>
             <div className="plan-workspace">
               <div className="plan-canvas">
@@ -695,18 +755,19 @@ export function App() {
                     <p>{workspace.plan.validationSummary}</p>
                   </div>
                 </div>
-                {!snapshot ? (
+                {!snapshot || terminal ? (
                   <button
                     className="button button-launch"
                     type="button"
                     disabled={busy}
                     onClick={() => void launch()}
                   >
-                    Approve plan and launch <Icon name="arrow" />
+                    {terminal ? 'Launch a new run' : 'Approve plan and launch'}{' '}
+                    <Icon name="arrow" />
                   </button>
                 ) : (
                   <a className="button button-launch" href="#run">
-                    Open active run <Icon name="arrow" />
+                    Open current run <Icon name="arrow" />
                   </a>
                 )}
               </div>
@@ -736,6 +797,23 @@ export function App() {
               </span>
             </div>
           </div>
+
+          {attention ? (
+            <a
+              className="run-attention"
+              href="#run-controls"
+              onClick={() => {
+                if (attention.taskKey) setSelectedTask(attention.taskKey);
+              }}
+            >
+              <span aria-hidden="true">!</span>
+              <span>
+                <strong>{attention.title}</strong>
+                <small>{attention.detail}</small>
+              </span>
+              <span>Review now →</span>
+            </a>
+          ) : null}
 
           {snapshot ? (
             <>
@@ -799,6 +877,7 @@ export function App() {
                     'The run was cancelled and persisted.',
                   )
                 }
+                onLaunchNew={() => void launch()}
               />
               <div className="run-lower-grid">
                 <TaskInspector task={selected} />
@@ -818,7 +897,9 @@ export function App() {
                         <li key={event.id}>
                           <span>{String(event.sequence).padStart(2, '0')}</span>
                           <div>
-                            <strong>{describeEvent(event)}</strong>
+                            <strong>
+                              {describeEvent(event, snapshot.projection)}
+                            </strong>
                             <small>
                               {event.source} · {event.type}
                             </small>
@@ -855,7 +936,9 @@ export function App() {
             <div className="section-heading">
               <div>
                 <p className="kicker">Review and evidence</p>
-                <h2 id="review-title">Failure stays visible after repair.</h2>
+                <h2 id="review-title">
+                  Evidence keeps its history and status.
+                </h2>
               </div>
               <p>
                 The review separates historical warnings from the latest
@@ -863,24 +946,28 @@ export function App() {
               </p>
             </div>
             <div className="review-grid">
-              <article className="review-verdict">
+              <article className={`review-verdict review-${review.state}`}>
                 <span
-                  className={`verdict-mark ${completed ? 'is-complete' : ''}`}
+                  className={`verdict-mark ${
+                    review.state === 'ready' ? 'is-complete' : ''
+                  }`}
                   aria-hidden="true"
                 >
-                  {completed ? '✓' : '…'}
+                  {review.mark}
                 </span>
                 <p className="kicker">Run verdict</p>
-                <h3>
-                  {completed
-                    ? 'Ready for human review'
-                    : 'Evidence is still forming'}
-                </h3>
-                <p>
-                  {completed
-                    ? 'Both task contracts passed their latest blocking validations. The earlier focus failure remains in history.'
-                    : 'Complete the supervised sequence to produce the final validation and diff evidence.'}
-                </p>
+                <h3>{review.title}</h3>
+                <p>{review.description}</p>
+                {terminal ? (
+                  <button
+                    className="button button-quiet review-relaunch"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void launch()}
+                  >
+                    Launch a new run <Icon name="arrow" />
+                  </button>
+                ) : null}
               </article>
               <article className="review-evidence">
                 <p className="kicker">Validation trail</p>
@@ -913,41 +1000,45 @@ export function App() {
                   <p className="empty-note">No validation evidence yet.</p>
                 )}
               </article>
-              <article className="diff-summary">
-                <p className="kicker">Diff summary fixture</p>
-                <h3>Preferences loop</h3>
-                <div className="diff-stats">
-                  <span>
-                    <b>4</b> files
-                  </span>
-                  <span>
-                    <b>+186</b> added
-                  </span>
-                  <span>
-                    <b>−24</b> removed
-                  </span>
-                </div>
-                <ul>
-                  <li>Shared preferences request contract</li>
-                  <li>Authenticated local service route</li>
-                  <li>Mobile focus repair and tests</li>
-                </ul>
-                <small>
-                  Fixture only · no repository files were changed by the
-                  simulated run
-                </small>
-              </article>
+              {review.hasDiffArtifact ? (
+                <article className="diff-summary">
+                  <p className="kicker">Diff artifact fixture</p>
+                  <h3>Preferences loop</h3>
+                  <div className="diff-stats">
+                    <span>
+                      <b>4</b> files
+                    </span>
+                    <span>
+                      <b>+186</b> added
+                    </span>
+                    <span>
+                      <b>−24</b> removed
+                    </span>
+                  </div>
+                  <ul>
+                    <li>Shared preferences request contract</li>
+                    <li>Authenticated local service route</li>
+                    <li>Mobile focus repair and tests</li>
+                  </ul>
+                  <small>
+                    Fixture only · no repository files were changed by the
+                    simulated run
+                  </small>
+                </article>
+              ) : (
+                <article className="diff-summary diff-empty">
+                  <p className="kicker">Diff evidence</p>
+                  <h3>No diff artifact recorded</h3>
+                  <p>
+                    Diff statistics appear only after this run produces a diff
+                    artifact.
+                  </p>
+                </article>
+              )}
               <article className="warning-summary">
                 <p className="kicker">Warnings</p>
-                <h3>
-                  {failedValidation
-                    ? '1 resolved warning'
-                    : 'No warnings recorded'}
-                </h3>
-                <p>
-                  {failedValidation?.outputSummary ??
-                    'The deterministic validation failure appears here after service verification.'}
-                </p>
+                <h3>{review.warningTitle}</h3>
+                <p>{review.warningDescription}</p>
               </article>
             </div>
           </div>

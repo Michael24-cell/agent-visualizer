@@ -91,4 +91,36 @@ describe('task presentation interactions', () => {
       'is-selected',
     );
   });
+
+  it('presents activity without creating a competing live region', () => {
+    const { container } = render(
+      <TaskInspector
+        task={{
+          ...tasks[0]!,
+          state: 'repair_pending',
+          stateLabel: 'Repair required',
+          currentActivity: 'A bounded focus repair is required.',
+        }}
+      />,
+    );
+    expect(
+      screen.getByText('A bounded focus repair is required.'),
+    ).toBeTruthy();
+    expect(container.querySelector('[aria-live]')).toBeNull();
+    expect(container.querySelector('.check-list.is-evidenced')).toBeNull();
+  });
+
+  it('marks acceptance criteria as evidenced only for completed work with evidence', () => {
+    const { container } = render(
+      <TaskInspector
+        task={{
+          ...tasks[0]!,
+          state: 'completed',
+          stateLabel: 'Completed',
+          evidence: ['experience-check: passed'],
+        }}
+      />,
+    );
+    expect(container.querySelector('.check-list.is-evidenced')).toBeTruthy();
+  });
 });

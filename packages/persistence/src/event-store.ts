@@ -87,8 +87,11 @@ export class SqliteEventStore implements DomainEventSink {
     const rows = this.database
       .prepare(
         `SELECT projection_json
-         FROM run_projections
-         ORDER BY rowid DESC`,
+         FROM run_projections AS projection
+         JOIN events AS created_event
+           ON created_event.run_id = projection.run_id
+          AND created_event.sequence = 1
+         ORDER BY created_event.rowid DESC`,
       )
       .all() as ProjectionRow[];
     return rows.map((row) =>
