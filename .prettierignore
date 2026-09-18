@@ -1,0 +1,6 @@
+dist
+coverage
+node_modules
+package-lock.json
+docs/visual-multi-agent-harness-mvp-build-brief.md
+docs/visual-multi-agent-harness-product-spec.md
