@@ -3,12 +3,20 @@ import Fastify from 'fastify';
 import { z } from 'zod';
 import type { AppConfig } from '@harness/config';
 import {
+  AdvanceDemoRunCommandSchema,
   AgentInstanceIdSchema,
+  ApprovalDecisionCommandSchema,
+  ApprovalIdSchema,
+  CancelDemoRunCommandSchema,
+  DemoRunSnapshotSchema,
   FoundationStatusSchema,
+  LaunchDemoRunCommandSchema,
+  LaunchDemoRunResponseSchema,
   PlanVersionIdSchema,
   RunIdSchema,
   ServiceHealthSchema,
   TaskIdSchema,
+  WorkspaceResponseSchema,
   type FoundationRecord,
 } from '@harness/contracts';
 import { RunProjectionSchema, executeRuntimeRun } from '@harness/domain';
@@ -22,6 +30,17 @@ import {
   SimulatedRuntimeAdapter,
   SimulatedScenarioIdSchema,
 } from '@harness/runtime-simulated';
+import {
+  DEMO_PLAN_VERSION_ID,
+  DemoCommandError,
+  advanceDemoRun,
+  cancelDemoRun,
+  createDemoRun,
+  decideDemoApproval,
+  latestDemoSnapshot,
+  snapshotFor,
+  workspaceFixture,
+} from './demo-run.js';
 
 const FOUNDATION_RECORD_ID = 'increment-0';
 const StartSimulatedRunSchema = z.strictObject({
@@ -38,6 +57,12 @@ function tokensMatch(expected: string, presented: string): boolean {
     expectedBytes.length === presentedBytes.length &&
     timingSafeEqual(expectedBytes, presentedBytes)
   );
+}
+
+function demoErrorStatus(error: DemoCommandError): 400 | 404 | 409 {
+  if (error.code === 'not_found') return 404;
+  if (error.code === 'stale') return 409;
+  return 400;
 }
 
 export function createService(config: AppConfig) {
@@ -92,6 +117,161 @@ export function createService(config: AppConfig) {
       record,
       migrationCount: store.migrationCount,
     });
+  });
+
+  service.get('/api/workspace', async () =>
+    WorkspaceResponseSchema.parse({
+      workspace: workspaceFixture,
+      activeRun: latestDemoSnapshot(eventStore),
+    }),
+  );
+
+  service.post('/api/demo-runs', async (request, reply) => {
+    const command = LaunchDemoRunCommandSchema.safeParse(request.body);
+    if (!command.success) {
+      return reply.code(400).send({ error: 'Invalid launch command.' });
+    }
+    if (command.data.planVersionId !== DEMO_PLAN_VERSION_ID) {
+      return reply.code(409).send({ error: 'The plan version is stale.' });
+    }
+    const runId = RunIdSchema.parse(`run_${randomUUID()}`);
+    createDemoRun(eventStore, runId);
+    return reply.code(202).send(LaunchDemoRunResponseSchema.parse({ runId }));
+  });
+
+  service.get('/api/demo-runs/:runId', async (request, reply) => {
+    const parameters = z
+      .strictObject({ runId: RunIdSchema })
+      .safeParse(request.params);
+    if (!parameters.success) {
+      return reply.code(400).send({ error: 'Invalid run ID.' });
+    }
+    try {
+      return DemoRunSnapshotSchema.parse(
+        snapshotFor(eventStore, parameters.data.runId),
+      );
+    } catch (error) {
+      if (error instanceof DemoCommandError) {
+        return reply
+          .code(demoErrorStatus(error))
+          .send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  service.post('/api/demo-runs/:runId/advance', async (request, reply) => {
+    const parameters = z
+      .strictObject({ runId: RunIdSchema })
+      .safeParse(request.params);
+    const command = AdvanceDemoRunCommandSchema.safeParse(request.body);
+    if (!parameters.success || !command.success) {
+      return reply.code(400).send({ error: 'Invalid advance command.' });
+    }
+    try {
+      return DemoRunSnapshotSchema.parse(
+        advanceDemoRun(
+          eventStore,
+          parameters.data.runId,
+          command.data.expectedSequence,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof DemoCommandError) {
+        return reply
+          .code(demoErrorStatus(error))
+          .send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  service.post(
+    '/api/demo-runs/:runId/approvals/:approvalId',
+    async (request, reply) => {
+      const parameters = z
+        .strictObject({ runId: RunIdSchema, approvalId: ApprovalIdSchema })
+        .safeParse(request.params);
+      const command = ApprovalDecisionCommandSchema.safeParse(request.body);
+      if (!parameters.success || !command.success) {
+        return reply.code(400).send({ error: 'Invalid approval command.' });
+      }
+      try {
+        return DemoRunSnapshotSchema.parse(
+          decideDemoApproval(
+            eventStore,
+            parameters.data.runId,
+            parameters.data.approvalId,
+            command.data.decision,
+            command.data.expectedSequence,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof DemoCommandError) {
+          return reply
+            .code(demoErrorStatus(error))
+            .send({ error: error.message });
+        }
+        throw error;
+      }
+    },
+  );
+
+  service.post('/api/demo-runs/:runId/cancel', async (request, reply) => {
+    const parameters = z
+      .strictObject({ runId: RunIdSchema })
+      .safeParse(request.params);
+    const command = CancelDemoRunCommandSchema.safeParse(request.body);
+    if (!parameters.success || !command.success) {
+      return reply.code(400).send({ error: 'Invalid cancellation command.' });
+    }
+    try {
+      return DemoRunSnapshotSchema.parse(
+        cancelDemoRun(
+          eventStore,
+          parameters.data.runId,
+          command.data.expectedSequence,
+        ),
+      );
+    } catch (error) {
+      if (error instanceof DemoCommandError) {
+        return reply
+          .code(demoErrorStatus(error))
+          .send({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
+  service.get('/api/runs/:runId/events', async (request, reply) => {
+    const parameters = z
+      .strictObject({ runId: RunIdSchema })
+      .safeParse(request.params);
+    const query = z
+      .strictObject({ after: z.coerce.number().int().nonnegative().default(0) })
+      .safeParse(request.query);
+    if (!parameters.success || !query.success) {
+      return reply.code(400).send({ error: 'Invalid event cursor.' });
+    }
+    const projection = eventStore.getProjection(parameters.data.runId);
+    if (!projection) {
+      return reply.code(404).send({ error: 'Run was not found.' });
+    }
+    const events = eventStore
+      .listEvents(parameters.data.runId)
+      .filter((event) => event.sequence > query.data.after);
+    const body = [
+      ...events.map(
+        (event) =>
+          `id: ${event.sequence}\nevent: domain-event\ndata: ${JSON.stringify(event)}\n`,
+      ),
+      `event: stream-end\ndata: ${JSON.stringify({ cursor: projection.lastSequence })}\n`,
+    ].join('\n');
+    return reply
+      .header('content-type', 'text/event-stream; charset=utf-8')
+      .header('cache-control', 'no-cache, no-transform')
+      .header('x-accel-buffering', 'no')
+      .send(`${body}\n`);
   });
 
   service.post('/api/simulated-runs', async (request, reply) => {

@@ -1,16 +1,9 @@
-import { z } from 'zod';
 import {
-  AgentInstanceSchema,
-  ApprovalSchema,
-  ArtifactSchema,
-  DependencySchema,
-  EventIdSchema,
-  RunIdSchema,
-  RunSchema,
-  TaskSchema,
-  ValidationResultSchema,
+  RunProjectionSchema,
   parseDomainEvent,
   type DomainEvent,
+  type RunId,
+  type RunProjection,
 } from '@harness/contracts';
 import {
   assertAgentTransition,
@@ -38,28 +31,11 @@ export class ProjectionError extends Error {
   }
 }
 
-export const RunProjectionSchema = z.strictObject({
-  runId: RunIdSchema,
-  run: RunSchema,
-  tasks: z.record(z.string(), TaskSchema),
-  dependencies: z.record(z.string(), DependencySchema),
-  agents: z.record(z.string(), AgentInstanceSchema),
-  approvals: z.record(z.string(), ApprovalSchema),
-  validations: z.record(z.string(), ValidationResultSchema),
-  artifacts: z.record(z.string(), ArtifactSchema),
-  runtimeConnection: z.enum(['connected', 'disconnected', 'reconciled']),
-  recoverySummary: z.string().min(1).optional(),
-  attentionRequired: z.boolean(),
-  lastSequence: z.number().int().positive(),
-  lastEventId: EventIdSchema,
-  appliedEventIds: z.array(EventIdSchema),
-});
-
-export type RunProjection = z.infer<typeof RunProjectionSchema>;
+export { RunProjectionSchema, type RunProjection } from '@harness/contracts';
 
 export interface DomainEventSink {
   append(event: DomainEvent): RunProjection;
-  getProjection(runId: z.infer<typeof RunIdSchema>): RunProjection | undefined;
+  getProjection(runId: RunId): RunProjection | undefined;
 }
 
 function requireTask(projection: RunProjection, taskId: string) {
@@ -90,13 +66,16 @@ function assertCompletionEvidence(
 ): void {
   const task = requireTask(projection, taskId);
   const taskValidations = Object.values(projection.validations).filter(
-    (validation) =>
-      validation.taskId === task.id && validation.blocksCompletion,
+    (validation) => validation.taskId === task.id,
   );
-  if (
-    taskValidations.length < task.validationRequirements.length ||
-    taskValidations.some((validation) => validation.status !== 'passed')
-  ) {
+  const requirementsPass = task.validationRequirements.every((requirement) => {
+    const attempts = taskValidations.filter(
+      (validation) =>
+        validation.validatorType === requirement && validation.blocksCompletion,
+    );
+    return attempts.at(-1)?.status === 'passed';
+  });
+  if (!requirementsPass) {
     throw new ProjectionError(
       'completion_blocked',
       `Task ${taskId} does not have passing completion evidence.`,
@@ -105,14 +84,22 @@ function assertCompletionEvidence(
 }
 
 function deriveAttention(projection: RunProjection): boolean {
+  const latestBlockingValidations = new Map<string, string>();
+  for (const validation of Object.values(projection.validations)) {
+    if (validation.blocksCompletion) {
+      latestBlockingValidations.set(
+        `${validation.taskId ?? 'run'}:${validation.validatorType}`,
+        validation.status,
+      );
+    }
+  }
   return (
     projection.runtimeConnection === 'disconnected' ||
     Object.values(projection.approvals).some(
       (approval) => approval.state === 'requested',
     ) ||
-    Object.values(projection.validations).some(
-      (validation) =>
-        validation.blocksCompletion && validation.status === 'failed',
+    [...latestBlockingValidations.values()].some(
+      (status) => status === 'failed',
     )
   );
 }
@@ -263,6 +250,26 @@ export function applyDomainEvent(
         );
       }
       next.dependencies[dependency.id] = dependency;
+      break;
+    }
+    case 'dependency.state_changed': {
+      const dependency = next.dependencies[event.payload.dependencyId];
+      if (!dependency) {
+        throw new ProjectionError(
+          'missing_entity',
+          'Dependency does not exist.',
+        );
+      }
+      if (dependency.state !== event.payload.from) {
+        throw new ProjectionError(
+          'state_mismatch',
+          `Dependency is ${dependency.state}, not ${event.payload.from}.`,
+        );
+      }
+      next.dependencies[dependency.id] = {
+        ...dependency,
+        state: event.payload.to,
+      };
       break;
     }
     case 'agent.instance_created': {

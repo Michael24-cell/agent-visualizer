@@ -83,6 +83,19 @@ export class SqliteEventStore implements DomainEventSink {
       : undefined;
   }
 
+  listProjections(): RunProjection[] {
+    const rows = this.database
+      .prepare(
+        `SELECT projection_json
+         FROM run_projections
+         ORDER BY rowid DESC`,
+      )
+      .all() as ProjectionRow[];
+    return rows.map((row) =>
+      RunProjectionSchema.parse(JSON.parse(row.projection_json)),
+    );
+  }
+
   private appendWithinTransaction(input: DomainEvent): RunProjection {
     const event = parseDomainEvent(input);
     const existingEvent = this.readStoredEvent(event.id);

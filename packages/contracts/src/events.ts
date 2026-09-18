@@ -82,6 +82,15 @@ export const DomainEventSchema = z.discriminatedUnion('type', [
     z.strictObject({ dependency: DependencySchema }),
   ),
   domainEvent(
+    'dependency.state_changed',
+    z.strictObject({
+      dependencyId: DependencySchema.shape.id,
+      from: z.literal('unsatisfied'),
+      to: z.enum(['satisfied', 'waived']),
+      reason: z.string().min(1),
+    }),
+  ),
+  domainEvent(
     'agent.instance_created',
     z.strictObject({ agentInstance: AgentInstanceSchema }),
   ),
