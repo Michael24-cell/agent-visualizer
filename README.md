@@ -1,6 +1,6 @@
 # Visual Multi-Agent Harness
 
-Local-first control plane for planning, supervising, and verifying coding-agent work. This repository is currently at **Increment 2: Complete simulated visual product loop**.
+Local-first control plane for planning, supervising, and verifying coding-agent work. This repository is currently at **Increment 2.5: Operational application shell**.
 
 ## Requirements
 
@@ -28,6 +28,8 @@ npm run verify
 Run migrations directly with `npm run db:migrate`. Migrations are transactional and safe to run repeatedly.
 
 The authenticated local service can execute deterministic development scenarios with `POST /api/simulated-runs` and retrieve the resulting authoritative projection with `GET /api/runs/:runId`. The visual product loop uses `POST /api/demo-runs`, typed advancement and approval commands, bounded cursor replay at `GET /api/runs/:runId/events`, and authoritative persisted-state refresh through `GET /api/workspace`. The replay endpoint returns events after a supplied cursor; it is useful recovery infrastructure, not an open live stream. The browser never owns execution status.
+
+The client is a viewport-bound operational shell with addressable Project, Methodologies, Plan, Current Run, Capability Atlas, Review, and History surfaces. Repository assessment, methodology compilation, capability metadata, plan execution, and the run itself remain clearly labeled deterministic fixtures. Real repository scanning begins in Increment 3; no live provider is connected.
 
 ## Boundaries that must remain stable
 

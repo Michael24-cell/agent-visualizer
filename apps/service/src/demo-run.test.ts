@@ -52,6 +52,28 @@ describe('complete simulated product loop', () => {
     const workspace = WorkspaceResponseSchema.parse(workspaceResponse.json());
     expect(workspace.activeRun).toBeUndefined();
     expect(workspace.workspace.plan.tasks).toHaveLength(2);
+    expect(workspace.workspace.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'agent-interface-systems',
+          kind: 'agent',
+          availability: 'active',
+        }),
+        expect.objectContaining({
+          id: 'agent-verification-review',
+          kind: 'agent',
+          availability: 'recommended',
+        }),
+        expect.objectContaining({
+          id: 'system-repository-assessment',
+          availability: 'dormant',
+        }),
+        expect.objectContaining({
+          id: 'system-live-provider',
+          availability: 'unavailable',
+        }),
+      ]),
+    );
 
     const launchResponse = await service.inject({
       method: 'POST',

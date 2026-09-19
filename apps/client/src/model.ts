@@ -8,6 +8,11 @@ import type {
 } from '@harness/contracts';
 
 export type FixtureTaskKey = 'interface' | 'service';
+export type AppSurface =
+  'project' | 'context' | 'plan' | 'run' | 'atlas' | 'review' | 'history';
+
+export type Capability = WorkspaceFixture['capabilities'][number];
+export type CapabilityFilter = 'all' | 'agents' | 'skills';
 
 export interface TaskViewModel {
   readonly key: FixtureTaskKey;
@@ -120,15 +125,22 @@ function latestTaskActivity(
   return undefined;
 }
 
+function projectedTaskForFixture(
+  projection: RunProjection,
+  key: FixtureTaskKey,
+) {
+  return Object.values(projection.tasks).find((task) =>
+    task.id.endsWith(`_${key}`),
+  );
+}
+
 export function buildTaskViewModels(
   workspace: WorkspaceFixture,
   snapshot?: DemoRunSnapshot,
 ): TaskViewModel[] {
   return workspace.plan.tasks.map((fixtureTask) => {
     const task = snapshot
-      ? Object.values(snapshot.projection.tasks).find(
-          (candidate) => candidate.title === fixtureTask.title,
-        )
+      ? projectedTaskForFixture(snapshot.projection, fixtureTask.key)
       : undefined;
     const state = task?.state ?? 'proposed';
     const agent = task?.activeAgentInstanceId
@@ -308,8 +320,8 @@ function fixtureKeyForTask(
 ): FixtureTaskKey | undefined {
   if (!taskId) return undefined;
   const task = projection.tasks[taskId];
-  return workspace.plan.tasks.find(
-    (candidate) => candidate.title === task?.title,
+  return workspace.plan.tasks.find((candidate) =>
+    task?.id.endsWith(`_${candidate.key}`),
   )?.key;
 }
 
@@ -366,6 +378,27 @@ export function isTerminalRun(snapshot?: DemoRunSnapshot): boolean {
   return Boolean(
     snapshot && ['completed', 'failed', 'cancelled'].includes(snapshot.phase),
   );
+}
+
+export function defaultSurfaceFor(snapshot?: DemoRunSnapshot): AppSurface {
+  if (!snapshot) return 'project';
+  return isTerminalRun(snapshot) ? 'review' : 'run';
+}
+
+export function filterCapabilities(
+  capabilities: readonly Capability[],
+  filter: CapabilityFilter,
+  state: Capability['availability'] | 'all',
+): Capability[] {
+  return capabilities.filter((capability) => {
+    const matchesKind =
+      filter === 'all' ||
+      (filter === 'agents' && capability.kind === 'agent') ||
+      (filter === 'skills' && capability.kind === 'skill');
+    return (
+      matchesKind && (state === 'all' || capability.availability === state)
+    );
+  });
 }
 
 export function describeEvent(

@@ -78,10 +78,16 @@ export const WorkspaceFixtureSchema = z.strictObject({
   }),
   capabilities: z.array(
     z.strictObject({
+      id: z.string().min(1),
       name: z.string().min(1),
+      kind: z.enum(['agent', 'skill', 'system']),
       category: CapabilityCategorySchema,
-      availability: z.enum(['active', 'recommended', 'dormant']),
+      availability: z.enum(['active', 'recommended', 'dormant', 'unavailable']),
       description: z.string().min(1),
+      source: z.string().min(1),
+      trust: z.string().min(1),
+      runtime: z.string().min(1),
+      relatedTo: z.array(z.string().min(1)),
     }),
   ),
 });

@@ -7,7 +7,9 @@ import {
 import {
   buildReviewViewModel,
   buildTaskViewModels,
+  defaultSurfaceFor,
   describeEvent,
+  filterCapabilities,
 } from './model.js';
 
 const fixture = WorkspaceFixtureSchema.parse({
@@ -185,6 +187,16 @@ describe('plan task presentation model', () => {
     );
   });
 
+  it('maps projected tasks by their stable fixture id relationship rather than title', () => {
+    const snapshot = makeSnapshot('interface_active');
+    snapshot.projection.tasks.task_interface!.title =
+      'A renamed projected task';
+    expect(buildTaskViewModels(fixture, snapshot)[0]).toMatchObject({
+      key: 'interface',
+      state: 'running',
+    });
+  });
+
   it('identifies the validator in completed validation ledger entries', () => {
     const snapshot = makeSnapshot('repair_required', {
       validations: { validation_experience_1: failedValidation },
@@ -209,6 +221,76 @@ describe('plan task presentation model', () => {
     } as unknown as DomainEvent;
     expect(describeEvent(event, snapshot.projection)).toContain(
       'experience-check failed',
+    );
+  });
+});
+
+describe('operational shell presentation', () => {
+  it('opens Project before launch, Run for active work, and Review for terminal work', () => {
+    expect(defaultSurfaceFor()).toBe('project');
+    expect(defaultSurfaceFor(makeSnapshot('interface_active'))).toBe('run');
+    expect(
+      defaultSurfaceFor(
+        makeSnapshot('completed', {
+          runState: 'completed',
+          taskState: 'completed',
+        }),
+      ),
+    ).toBe('review');
+  });
+
+  it('filters the Atlas without changing capability identity or availability', () => {
+    const capabilities = WorkspaceFixtureSchema.parse({
+      ...fixture,
+      capabilities: [
+        {
+          id: 'agent-interface',
+          name: 'Interface agent',
+          kind: 'agent',
+          category: 'interface',
+          availability: 'active',
+          description: 'Active interface capability.',
+          source: 'Fixture',
+          trust: 'Approved',
+          runtime: 'Simulated',
+          relatedTo: [],
+        },
+        {
+          id: 'skill-review',
+          name: 'Review skill',
+          kind: 'skill',
+          category: 'verification',
+          availability: 'recommended',
+          description: 'Recommended review capability.',
+          source: 'Fixture',
+          trust: 'Reviewed',
+          runtime: 'Compatible',
+          relatedTo: [],
+        },
+        {
+          id: 'system-provider',
+          name: 'Live provider',
+          kind: 'system',
+          category: 'neutral',
+          availability: 'unavailable',
+          description: 'Not connected.',
+          source: 'Roadmap',
+          trust: 'Unavailable',
+          runtime: 'None',
+          relatedTo: [],
+        },
+      ],
+    }).capabilities;
+
+    expect(filterCapabilities(capabilities, 'agents', 'all')).toHaveLength(1);
+    expect(
+      filterCapabilities(capabilities, 'skills', 'recommended')[0],
+    ).toMatchObject({
+      id: 'skill-review',
+      availability: 'recommended',
+    });
+    expect(filterCapabilities(capabilities, 'all', 'unavailable')[0]?.id).toBe(
+      'system-provider',
     );
   });
 });
