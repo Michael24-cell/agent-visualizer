@@ -299,7 +299,7 @@ describe('phase-aware review presentation', () => {
   it('keeps the pre-launch review empty and hides fixture diff statistics', () => {
     expect(buildReviewViewModel()).toMatchObject({
       state: 'prelaunch',
-      title: 'Review begins after launch',
+      title: 'Nothing to review yet',
       hasDiffArtifact: false,
       warningState: 'none',
     });
@@ -315,9 +315,9 @@ describe('phase-aware review presentation', () => {
     );
     expect(review).toMatchObject({
       state: 'attention',
-      title: 'Repair required before review',
+      title: 'A fix is needed first',
       warningState: 'unresolved',
-      warningTitle: '1 unresolved validation warning',
+      warningTitle: '1 unresolved warning',
       hasDiffArtifact: false,
     });
   });
@@ -358,14 +358,14 @@ describe('phase-aware review presentation', () => {
       state: 'ready',
       title: 'Ready for human review',
       warningState: 'resolved',
-      warningTitle: '1 resolved validation warning',
+      warningTitle: '1 resolved warning',
       hasDiffArtifact: true,
     });
   });
 
   it.each([
-    ['failed', 'failed', 'Run failed and remains blocked'],
-    ['cancelled', 'cancelled', 'Run cancelled with work preserved'],
+    ['failed', 'failed', 'Work failed'],
+    ['cancelled', 'cancelled', 'Work stopped'],
   ] as const)(
     'describes a %s terminal run truthfully',
     (phase, state, title) => {
@@ -382,7 +382,7 @@ describe('phase-aware review presentation', () => {
       buildReviewViewModel(makeSnapshot('interface_active')),
     ).toMatchObject({
       state: 'in_progress',
-      title: 'Run is in progress',
+      title: 'In progress',
     });
   });
 });

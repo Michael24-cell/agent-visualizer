@@ -116,13 +116,11 @@ export function CapabilityAtlas({
     <section className="surface atlas-surface" aria-labelledby="atlas-title">
       <header className="surface-heading atlas-heading">
         <div>
-          <p className="eyebrow">Capabilities / agent and skill atlas</p>
-          <h1 id="atlas-title">
-            The capability field, with its quiet parts intact.
-          </h1>
+          <p className="eyebrow">Capabilities · agents and skills</p>
+          <h1 id="atlas-title">Capabilities · {capabilities.length}</h1>
           <p>
-            Active, recommended, dormant, and unavailable remain visible without
-            pretending to be execution history.
+            Active capabilities are lit. Recommended, dormant, and unavailable
+            ones stay plotted so you can see what is available, not what ran.
           </p>
         </div>
         <span className="truth-badge">Fixture capability map</span>

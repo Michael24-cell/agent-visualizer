@@ -60,16 +60,16 @@ export interface AttentionViewModel {
 const stateLabels: Record<TaskState, string> = {
   proposed: 'Proposed',
   approved: 'Approved',
-  waiting: 'Waiting on dependency',
+  waiting: 'Waiting',
   ready: 'Ready',
   preparing: 'Preparing',
   running: 'In progress',
-  awaiting_input: 'Needs approval',
+  awaiting_input: 'Needs you',
   validating: 'Validating',
-  repair_pending: 'Repair required',
+  repair_pending: 'Needs a fix',
   completed: 'Completed',
   failed: 'Failed',
-  cancelled: 'Cancelled',
+  cancelled: 'Stopped',
 };
 
 const statusSymbols: Record<TaskState, string> = {
@@ -91,19 +91,19 @@ function activityFor(taskState: TaskState, key: FixtureTaskKey): string {
   const active: Record<TaskState, string> = {
     proposed: 'Ready for plan review.',
     approved: 'Approved in the pinned plan.',
-    waiting: 'Waiting for the validated contract handoff.',
+    waiting: 'Waiting for the contract from the interface agent.',
     ready: 'Dependencies are satisfied.',
     preparing: 'Preparing the task context.',
     running:
       key === 'interface'
         ? 'Defining form states and the shared request contract.'
         : 'Implementing the authenticated service handoff.',
-    awaiting_input: 'Waiting for a bounded capability decision.',
-    validating: 'Running blocking evidence checks.',
-    repair_pending: 'Focus behavior failed; a bounded repair is ready.',
-    completed: 'Deliverable and validation evidence are attached.',
+    awaiting_input: 'Waiting for your decision.',
+    validating: 'Running checks.',
+    repair_pending: 'A check failed; a fix is ready to apply.',
+    completed: 'Done, with checks attached.',
     failed: 'Work stopped before acceptance criteria were met.',
-    cancelled: 'The task was cancelled by the user.',
+    cancelled: 'Stopped by you.',
   };
   return active[taskState];
 }
@@ -232,13 +232,13 @@ export function buildReviewViewModel(
     unresolvedFailures.at(-1) ?? failedValidations.at(-1);
   const warningTitle =
     warningState === 'none'
-      ? 'No validation warnings recorded'
+      ? 'No warnings'
       : `${warningCount} ${
           warningState === 'resolved' ? 'resolved' : 'unresolved'
-        } validation warning${warningCount === 1 ? '' : 's'}`;
+        } warning${warningCount === 1 ? '' : 's'}`;
   const warningDescription =
     warningValidation?.outputSummary ??
-    'A validation warning will remain visible here until a later passing result supersedes it.';
+    'A failed check stays here until a later check passes.';
   const shared = {
     hasDiffArtifact:
       snapshot !== undefined &&
@@ -255,9 +255,8 @@ export function buildReviewViewModel(
       ...shared,
       state: 'prelaunch',
       mark: '○',
-      title: 'Review begins after launch',
-      description:
-        'Launch the approved plan to collect validation, artifact, and diff evidence.',
+      title: 'Nothing to review yet',
+      description: 'Start the plan to collect checks and outputs.',
     };
   }
   if (snapshot.phase === 'completed') {
@@ -267,7 +266,7 @@ export function buildReviewViewModel(
       mark: '✓',
       title: 'Ready for human review',
       description:
-        'Both task contracts passed their latest blocking validations. Earlier failures remain visible in history.',
+        'Every task passed its latest checks. Earlier failures stay in history.',
     };
   }
   if (snapshot.phase === 'repair_required') {
@@ -275,9 +274,8 @@ export function buildReviewViewModel(
       ...shared,
       state: 'attention',
       mark: '!',
-      title: 'Repair required before review',
-      description:
-        'A blocking validation is still unresolved. Apply the bounded repair, then review the new evidence.',
+      title: 'A fix is needed first',
+      description: 'A check failed. Apply the fix, then review the new result.',
     };
   }
   if (snapshot.phase === 'failed') {
@@ -285,9 +283,9 @@ export function buildReviewViewModel(
       ...shared,
       state: 'failed',
       mark: '×',
-      title: 'Run failed and remains blocked',
+      title: 'Work failed',
       description:
-        'A required action was denied or failed. Preserved events and evidence remain available for review.',
+        'A required action was denied or failed. Everything so far is kept for review.',
     };
   }
   if (snapshot.phase === 'cancelled') {
@@ -295,21 +293,18 @@ export function buildReviewViewModel(
       ...shared,
       state: 'cancelled',
       mark: '—',
-      title: 'Run cancelled with work preserved',
-      description:
-        'No further work will start. Existing events, artifacts, and validation evidence remain inspectable.',
+      title: 'Work stopped',
+      description: 'Nothing more will start. What was done is kept.',
     };
   }
   return {
     ...shared,
     state: snapshot.projection.attentionRequired ? 'attention' : 'in_progress',
     mark: snapshot.projection.attentionRequired ? '!' : '…',
-    title: snapshot.projection.attentionRequired
-      ? 'Run needs a decision'
-      : 'Run is in progress',
+    title: snapshot.projection.attentionRequired ? 'Needs you' : 'In progress',
     description: snapshot.projection.attentionRequired
-      ? 'Resolve the highlighted approval or task repair before the run can continue.'
-      : 'The deterministic run is collecting task, validation, and artifact evidence.',
+      ? 'Decide on the open request before work continues.'
+      : 'Agents are working. Checks and outputs appear as they land.',
   };
 }
 
@@ -329,7 +324,8 @@ export function buildAttentionViewModel(
   workspace: WorkspaceFixture,
   snapshot?: DemoRunSnapshot,
 ): AttentionViewModel | undefined {
-  if (!snapshot?.projection.attentionRequired) return undefined;
+  if (!snapshot?.projection.attentionRequired || isTerminalRun(snapshot))
+    return undefined;
   const approval = Object.values(snapshot.projection.approvals).find(
     (candidate) => candidate.state === 'requested',
   );
@@ -340,7 +336,7 @@ export function buildAttentionViewModel(
       approval.taskId,
     );
     return {
-      title: `Approval needed: ${approval.requestedAction}`,
+      title: `Needs you: ${approval.requestedAction}`,
       detail: approval.reason,
       ...(taskKey ? { taskKey } : {}),
     };
@@ -361,16 +357,16 @@ export function buildAttentionViewModel(
       repairTask.id,
     );
     return {
-      title: `Repair needed: ${repairTask.title}`,
+      title: `Needs a fix: ${repairTask.title}`,
       detail:
         failedValidation?.outputSummary ??
-        'A blocking validation must be repaired before the run can continue.',
+        'A check failed and needs a fix before work continues.',
       ...(taskKey ? { taskKey } : {}),
     };
   }
   return {
-    title: 'Run needs attention',
-    detail: 'Review the current run evidence before continuing.',
+    title: 'Needs you',
+    detail: 'Review the current work before continuing.',
   };
 }
 
@@ -401,40 +397,52 @@ export function filterCapabilities(
   });
 }
 
+function workStateLabel(state: string): string {
+  const labels: Record<string, string> = {
+    executing: 'in progress',
+    verifying: 'checking',
+    completed: 'done',
+    failed: 'failed',
+    cancelled: 'stopped',
+    paused: 'paused',
+  };
+  return labels[state] ?? state.replaceAll('_', ' ');
+}
+
 export function describeEvent(
   event: DomainEvent,
   projection?: RunProjection,
 ): string {
   switch (event.type) {
     case 'run.created':
-      return 'Created the run from approved plan v1.';
+      return 'Started plan v1.';
     case 'task.created':
       return `Added “${event.payload.task.title}” to the run.`;
     case 'dependency.created':
-      return 'Declared the contract handoff dependency.';
+      return 'The service task waits for the interface contract.';
     case 'dependency.state_changed':
-      return 'Released the service task with validated contract evidence.';
+      return 'Contract ready — the backend agent can start.';
     case 'agent.instance_created':
-      return 'Prepared a task-specific simulated agent.';
+      return 'Agent assigned.';
     case 'run.state_changed':
-      return `Run ${event.payload.to.replaceAll('_', ' ')} — ${event.payload.reason}`;
+      return `Work ${workStateLabel(event.payload.to)} — ${event.payload.reason}`;
     case 'task.state_changed':
-      return `Task ${event.payload.to.replaceAll('_', ' ')} — ${event.payload.reason}`;
+      return `${stateLabels[event.payload.to]} — ${event.payload.reason}`;
     case 'agent.state_changed':
       return `Agent ${event.payload.to.replaceAll('_', ' ')} — ${event.payload.reason}`;
     case 'approval.requested':
-      return `Approval requested: ${event.payload.approval.requestedAction}.`;
+      return `Asked: ${event.payload.approval.requestedAction}.`;
     case 'approval.decided':
-      return `Approval ${event.payload.to}.`;
+      return `You ${event.payload.to === 'approved' ? 'approved' : event.payload.to === 'denied' ? 'denied' : 'stopped'} the request.`;
     case 'validation.started':
-      return `Started ${event.payload.validation.validatorType}.`;
+      return `Running check: ${event.payload.validation.validatorType}.`;
     case 'validation.completed':
       return `${
         projection?.validations[event.payload.validationId]?.validatorType ??
-        'Validation'
-      } ${event.payload.to}: ${event.payload.outputSummary}`;
+        'Check'
+      } ${event.payload.to === 'passed' ? 'passed' : 'failed'} — ${event.payload.outputSummary}`;
     case 'artifact.produced':
-      return `Produced a validated ${event.payload.artifact.type} artifact.`;
+      return `Produced the ${event.payload.artifact.type}.`;
     case 'runtime.disconnected':
       return `Runtime disconnected: ${event.payload.reason}`;
     case 'runtime.reconciled':

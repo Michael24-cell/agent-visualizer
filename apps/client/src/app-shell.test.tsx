@@ -186,8 +186,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('operational application shell', () => {
-  it('defaults to Project before launch and moves to Current run after launch', async () => {
+describe('pane shell', () => {
+  it('opens with one coordinator pane and a plan card, then opens agent panes on approval', async () => {
     const user = userEvent.setup();
     vi.mocked(readWorkspace).mockResolvedValue({
       workspace,
@@ -195,42 +195,60 @@ describe('operational application shell', () => {
     render(<App />);
 
     expect(
-      await screen.findByRole('heading', { name: 'Fixture project' }),
+      await screen.findByRole('heading', { name: 'Fixture project', level: 1 }),
     ).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: /PlanTask topology/ }));
-    await user.click(
-      screen.getByRole('button', { name: /Approve plan and launch/ }),
-    );
-
     expect(
-      await screen.findByRole('heading', { name: 'Account preferences loop' }),
+      screen.getAllByRole('form', { name: 'Message composer' }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole('textbox', { name: 'Message Coordinator' }),
     ).toBeTruthy();
-    expect(window.location.hash).toBe('#/run');
+
+    await user.click(screen.getByRole('button', { name: 'Approve and start' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('form', { name: 'Message composer' }),
+      ).toHaveLength(3),
+    );
+    expect(
+      screen.getByRole('textbox', { name: 'Message Interface systems' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('textbox', { name: 'Message Backend orchestration' }),
+    ).toBeTruthy();
   });
 
-  it('recovers an active run to Run and a terminal run to Review', async () => {
+  it('opens Plan from the project panel and closes an agent pane', async () => {
+    const user = userEvent.setup();
     vi.mocked(readWorkspace).mockResolvedValue({
       workspace,
       activeRun: snapshot('interface_active'),
     });
-    const active = render(<App />);
+    render(<App />);
+    await screen.findByRole('textbox', { name: 'Message Coordinator' });
+    await user.click(screen.getByRole('button', { name: /^Plan/ }));
+    expect(screen.getByLabelText('Current run task map')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Interface systems' }));
     expect(
-      await screen.findByRole('heading', { name: 'Account preferences loop' }),
+      screen.getByRole('textbox', { name: 'Message Interface systems' }),
     ).toBeTruthy();
-    active.unmount();
+    await user.click(
+      screen.getByRole('button', { name: 'Close Interface systems pane' }),
+    );
+    expect(
+      screen.queryByRole('textbox', { name: 'Message Interface systems' }),
+    ).toBeNull();
+  });
 
-    window.history.replaceState(null, '', '/');
+  it('recovers a finished run with the coordinator offering to start again', async () => {
     vi.mocked(readWorkspace).mockResolvedValue({
       workspace,
       activeRun: snapshot('completed'),
     });
     render(<App />);
-    await waitFor(() => expect(window.location.hash).toBe('#/review'));
     expect(
-      await screen.findByRole('heading', {
-        name: 'Ready for human review',
-        level: 1,
-      }),
+      await screen.findByRole('button', { name: 'Start the plan again' }),
     ).toBeTruthy();
   });
 });

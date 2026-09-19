@@ -9,26 +9,23 @@ import {
   readDemoRun,
   readWorkspace,
 } from './api';
-import { CapabilityAtlas } from './capability-atlas';
+import {
+  buildRoomMessages,
+  buildRooms,
+  phaseLabel,
+  type ComposerInput,
+  type RoomId,
+} from './conversation';
 import {
   buildAttentionViewModel,
   buildTaskViewModels,
-  defaultSurfaceFor,
   isTerminalRun,
-  type AppSurface,
   type FixtureTaskKey,
 } from './model';
-import {
-  ContextSurface,
-  HistorySurface,
-  PlanSurface,
-  ProjectSurface,
-  ReviewSurface,
-  RunSurface,
-  TaskGraph,
-  TaskInspector,
-  TaskList,
-} from './operational-surfaces';
+import { TaskGraph, TaskInspector, TaskList } from './operational-surfaces';
+import { ExplorerDetail, ProjectExplorer, type ExplorerItem } from './explorer';
+import { AddPaneMenu, Pane } from './panes';
+import type { Stage } from './stages';
 
 export { TaskGraph as TaskRail, TaskInspector, TaskList };
 
@@ -36,33 +33,6 @@ type LoadState =
   | { phase: 'loading' }
   | { phase: 'ready'; data: WorkspaceResponse }
   | { phase: 'error'; message: string };
-
-const surfaces: Array<{
-  id: AppSurface;
-  label: string;
-  short: string;
-  icon: string;
-}> = [
-  { id: 'project', label: 'Project', short: 'Assessment', icon: '⌂' },
-  { id: 'context', label: 'Methodologies', short: 'Context stack', icon: '◇' },
-  { id: 'plan', label: 'Plan', short: 'Task topology', icon: '⌁' },
-  { id: 'run', label: 'Current run', short: 'Supervision', icon: '▶' },
-  {
-    id: 'atlas',
-    label: 'Capabilities',
-    short: 'Agent + skill atlas',
-    icon: '✣',
-  },
-  { id: 'review', label: 'Review', short: 'Evidence', icon: '✓' },
-  { id: 'history', label: 'History', short: 'Local outcomes', icon: '◷' },
-];
-
-function hashSurface(): AppSurface | undefined {
-  const value = window.location.hash.replace(/^#\/?/, '');
-  return surfaces.some((surface) => surface.id === value)
-    ? (value as AppSurface)
-    : undefined;
-}
 
 function Brand() {
   return (
@@ -74,112 +44,43 @@ function Brand() {
       </span>
       <span>
         <strong>Harness</strong>
-        <small>local control plane</small>
       </span>
     </div>
   );
 }
 
-function ApplicationNav({
-  surface,
-  snapshot,
-  attention,
-  onNavigate,
-}: {
-  surface: AppSurface;
-  snapshot?: DemoRunSnapshot | undefined;
-  attention: boolean;
-  onNavigate: (surface: AppSurface) => void;
-}) {
-  return (
-    <nav className="app-nav" aria-label="Primary navigation">
-      {surfaces.map((item) => {
-        const runBadge =
-          item.id === 'run' && snapshot && !isTerminalRun(snapshot);
-        const reviewBadge = item.id === 'review' && isTerminalRun(snapshot);
-        return (
-          <button
-            type="button"
-            className={surface === item.id ? 'is-current' : ''}
-            aria-current={surface === item.id ? 'page' : undefined}
-            onClick={() => onNavigate(item.id)}
-            key={item.id}
-          >
-            <span className="nav-icon" aria-hidden="true">
-              {item.icon}
-            </span>
-            <span>
-              <strong>{item.label}</strong>
-              <small>{item.short}</small>
-            </span>
-            {runBadge ? (
-              <i className="nav-state is-active" aria-label="Run active" />
-            ) : null}
-            {reviewBadge ? (
-              <i className="nav-state is-ready" aria-label="Review ready" />
-            ) : null}
-            {item.id === 'run' && attention ? (
-              <b className="nav-count" aria-label="One item needs attention">
-                1
-              </b>
-            ) : null}
-          </button>
-        );
-      })}
-      <div className="nav-boundary">
-        <span aria-hidden="true">⚙</span>
-        <span>
-          <strong>Project settings</strong>
-          <small>Unavailable in this increment</small>
-        </span>
-      </div>
-    </nav>
-  );
-}
-
 export function App() {
   const [loadState, setLoadState] = useState<LoadState>({ phase: 'loading' });
-  const [surface, setSurface] = useState<AppSurface>(
-    hashSurface() ?? 'project',
-  );
   const [selectedTask, setSelectedTask] = useState<FixtureTaskKey>('interface');
-  const [planView, setPlanView] = useState<'graph' | 'list'>('graph');
-  const [runView, setRunView] = useState<'graph' | 'list'>('graph');
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [panes, setPanes] = useState<RoomId[]>(['coordinator']);
+  const [activePane, setActivePane] = useState(0);
+  const [explorerOpen, setExplorerOpen] = useState(
+    () => typeof window === 'undefined' || window.innerWidth > 960,
+  );
+  const [explorerItem, setExplorerItem] = useState<ExplorerItem>();
+  const [drawerStage, setDrawerStage] = useState<Stage>();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('Loading the local project.');
   const [actionError, setActionError] = useState<string>();
 
-  const navigate = (next: AppSurface, replace = false) => {
-    setSurface(next);
-    setMenuOpen(false);
-    const url = `${window.location.pathname}${window.location.search}#/${next}`;
-    window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
-  };
-
-  useEffect(() => {
-    const syncFromHistory = () => {
-      const next = hashSurface();
-      if (next) setSurface(next);
-    };
-    window.addEventListener('hashchange', syncFromHistory);
-    window.addEventListener('popstate', syncFromHistory);
-    return () => {
-      window.removeEventListener('hashchange', syncFromHistory);
-      window.removeEventListener('popstate', syncFromHistory);
-    };
-  }, []);
-
-  const selectAttentionTask = (nextData: WorkspaceResponse) => {
+  const followAttention = (nextData: WorkspaceResponse) => {
     const attention = buildAttentionViewModel(
       nextData.workspace,
       nextData.activeRun,
     );
-    if (attention?.taskKey) setSelectedTask(attention.taskKey);
+    if (attention?.taskKey) {
+      const key = attention.taskKey;
+      setSelectedTask(key);
+      setPanes((current) =>
+        current.includes(key)
+          ? current
+          : [...current, key].slice(current.length >= 3 ? 1 : 0),
+      );
+    }
   };
 
   const applyWorkspace = (data: WorkspaceResponse, message: string) => {
-    selectAttentionTask(data);
+    followAttention(data);
     setLoadState({ phase: 'ready', data });
     setNotice(message);
     setActionError(undefined);
@@ -191,12 +92,11 @@ export function App() {
       applyWorkspace(
         data,
         refreshing && data.activeRun
-          ? `Refreshed from persisted state at event ${data.activeRun.projection.lastSequence}.`
+          ? 'Refreshed.'
           : data.activeRun
-            ? `Recovered ${data.activeRun.phase.replaceAll('_', ' ')} from persisted events.`
-            : 'Project context is ready for plan review.',
+            ? `Restored: work ${phaseLabel(data.activeRun.phase)}.`
+            : 'Project ready. Review the plan.',
       );
-      if (!hashSurface()) navigate(defaultSurfaceFor(data.activeRun), true);
     } catch (error) {
       setLoadState({
         phase: 'error',
@@ -211,28 +111,15 @@ export function App() {
   useEffect(() => {
     let active = true;
     void readWorkspace()
-      .then((nextData) => {
+      .then((data) => {
         if (!active) return;
-        const nextAttention = buildAttentionViewModel(
-          nextData.workspace,
-          nextData.activeRun,
-        );
-        if (nextAttention?.taskKey) setSelectedTask(nextAttention.taskKey);
-        setLoadState({ phase: 'ready', data: nextData });
+        followAttention(data);
+        setLoadState({ phase: 'ready', data });
         setNotice(
-          nextData.activeRun
-            ? `Recovered ${nextData.activeRun.phase.replaceAll('_', ' ')} from persisted events.`
-            : 'Project context is ready for plan review.',
+          data.activeRun
+            ? `Restored: work ${phaseLabel(data.activeRun.phase)}.`
+            : 'Project ready. Review the plan.',
         );
-        if (!hashSurface()) {
-          const nextSurface = defaultSurfaceFor(nextData.activeRun);
-          setSurface(nextSurface);
-          window.history.replaceState(
-            null,
-            '',
-            `${window.location.pathname}${window.location.search}#/${nextSurface}`,
-          );
-        }
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -258,11 +145,18 @@ export function App() {
   const attention = data
     ? buildAttentionViewModel(data.workspace, snapshot)
     : undefined;
+  const rooms = useMemo(
+    () =>
+      data
+        ? buildRooms(data.workspace, tasks, snapshot, attention?.taskKey)
+        : [],
+    [data, tasks, snapshot, attention?.taskKey],
+  );
 
   const updateRun = (next: DemoRunSnapshot, message: string) => {
     if (loadState.phase !== 'ready') return;
     const nextData = { ...loadState.data, activeRun: next };
-    selectAttentionTask(nextData);
+    followAttention(nextData);
     setLoadState({ phase: 'ready', data: nextData });
     setNotice(message);
     setActionError(undefined);
@@ -278,9 +172,8 @@ export function App() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         try {
-          const refreshed = await readWorkspace();
           applyWorkspace(
-            refreshed,
+            await readWorkspace(),
             'The run changed before that command completed. Refreshed from persisted state.',
           );
         } catch (refreshError) {
@@ -306,11 +199,13 @@ export function App() {
     try {
       const runId = await launchDemoRun(data.workspace.plan.id);
       setSelectedTask('interface');
+      setPanes(['coordinator', 'interface', 'service']);
+      setActivePane(1);
+      setDrawerStage(undefined);
       updateRun(
         await readDemoRun(runId),
-        'Run launched. The interface task is now active.',
+        'Plan started. The interface agent is working.',
       );
-      navigate('run');
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'The run could not launch.',
@@ -334,7 +229,6 @@ export function App() {
     return (
       <main className="loading-screen error-screen">
         <Brand />
-        <p className="eyebrow">Local service unavailable</p>
         <h1>The workspace could not be reconstructed.</h1>
         <p>{loadState.message}</p>
         <button
@@ -358,196 +252,229 @@ export function App() {
   const terminal = isTerminalRun(snapshot);
   const canCancel = snapshot?.availableCommands.includes('cancel') ?? false;
 
-  const renderSurface = () => {
-    switch (surface) {
-      case 'project':
-        return <ProjectSurface workspace={workspace} />;
-      case 'context':
-        return <ContextSurface workspace={workspace} />;
-      case 'plan':
-        return (
-          <PlanSurface
-            workspace={workspace}
-            tasks={tasks}
-            selected={selectedTask}
-            view={planView}
-            onSelect={setSelectedTask}
-            onView={setPlanView}
-            onLaunch={() => void launch()}
-            onOpenRun={() => navigate('run')}
-            hasRun={Boolean(snapshot)}
-            terminal={terminal}
-            busy={busy}
-          />
+  const advance = () =>
+    snapshot &&
+    void runAction(() => advanceDemoRun(snapshot), 'Next step applied.');
+  const decide = (approvalId: string, decision: 'approved' | 'denied') =>
+    snapshot &&
+    void runAction(
+      () => decideApproval(snapshot, approvalId, decision),
+      decision === 'approved'
+        ? 'Approved. The agent continues.'
+        : 'Denied. Work stopped.',
+    );
+  const cancel = () =>
+    snapshot &&
+    void runAction(
+      () => cancelDemoRun(snapshot),
+      'Stopped. Everything so far is kept.',
+    );
+
+  const runComposerCommand = (
+    input: Extract<ComposerInput, { kind: 'command' }>,
+  ): string => {
+    switch (input.name) {
+      case 'launch':
+        if (snapshot && !terminal) return 'Work is already in progress.';
+        void launch();
+        return 'Launching from plan v1.';
+      case 'next':
+        if (!snapshot) return 'Nothing started yet. Use /launch first.';
+        if (!snapshot.availableCommands.includes('advance'))
+          return snapshot.availableCommands.includes('approve')
+            ? 'An agent is waiting on you. Use /approve or /deny.'
+            : 'Nothing to apply right now.';
+        advance();
+        return `Applied: ${snapshot.nextStepLabel}.`;
+      case 'approve':
+      case 'deny': {
+        if (!pendingApproval) return 'No open request.';
+        decide(
+          pendingApproval.id,
+          input.name === 'approve' ? 'approved' : 'denied',
         );
-      case 'run':
-        return (
-          <RunSurface
-            snapshot={snapshot}
-            tasks={tasks}
-            selected={selectedTask}
-            view={runView}
-            onSelect={setSelectedTask}
-            onView={setRunView}
-            busy={busy}
-            onAdvance={() =>
-              snapshot &&
-              void runAction(
-                () => advanceDemoRun(snapshot),
-                'The next deterministic event group was applied.',
-              )
-            }
-            onDecision={(decision) => {
-              if (snapshot && pendingApproval)
-                void runAction(
-                  () => decideApproval(snapshot, pendingApproval.id, decision),
-                  decision === 'approved'
-                    ? 'Approval recorded. Service work resumed.'
-                    : 'Approval denied. The run stopped safely.',
-                );
-            }}
-            onCancel={() =>
-              snapshot &&
-              void runAction(
-                () => cancelDemoRun(snapshot),
-                'The run was cancelled and persisted.',
-              )
-            }
-            onLaunchNew={() => void launch()}
-            onOpenPlan={() => navigate('plan')}
-          />
-        );
-      case 'atlas':
-        return <CapabilityAtlas capabilities={workspace.capabilities} />;
-      case 'review':
-        return (
-          <ReviewSurface
-            snapshot={snapshot}
-            busy={busy}
-            onLaunchNew={() => void launch()}
-          />
-        );
-      case 'history':
-        return <HistorySurface snapshot={snapshot} />;
+        return `${input.name === 'approve' ? 'Approved' : 'Denied'}: ${pendingApproval.requestedAction}.`;
+      }
+      case 'stop':
+        if (!snapshot || !canCancel) return 'Nothing is running.';
+        cancel();
+        return 'Stopping. Everything so far is kept.';
+      case 'to':
+        return '';
     }
   };
 
+  const openPanes = panes
+    .map((id) => rooms.find((room) => room.id === id))
+    .filter((room): room is NonNullable<typeof room> => Boolean(room?.open));
+  const activeIndex = Math.min(activePane, Math.max(openPanes.length - 1, 0));
+
+  const addPane = (room: RoomId) => {
+    setPanes((current) => {
+      if (current.includes(room)) return current;
+      const next = [...current, room];
+      return next.length > 3 ? next.slice(next.length - 3) : next;
+    });
+    setActivePane(Math.min(panes.length, 2));
+  };
+  const closePane = (room: RoomId) =>
+    setPanes((current) => current.filter((id) => id !== room));
+
+  const paneHandlers = {
+    workspace,
+    tasks,
+    snapshot,
+    busy,
+    onDecision: decide,
+    onAdvance: advance,
+    onCancel: cancel,
+    onLaunch: () => void launch(),
+    onShowPlan: () => {
+      setDrawerStage('plan');
+      setExplorerItem('plan');
+      setExplorerOpen(true);
+    },
+    onCommand: runComposerCommand,
+  };
+
   return (
-    <div className="application-frame">
-      <a className="skip-link" href="#workspace">
-        Skip to workspace
+    <div
+      className={`app ${explorerOpen ? 'has-explorer' : ''} ${
+        explorerOpen && explorerItem ? `has-detail detail-${explorerItem}` : ''
+      }`}
+    >
+      <a className="skip-link" href="#panes">
+        Skip to conversation
       </a>
-      <aside className={`sidebar ${menuOpen ? 'is-open' : ''}`}>
-        <div className="sidebar-top">
-          <Brand />
+      <header className="app-header">
+        <button
+          type="button"
+          className="explorer-toggle"
+          aria-pressed={explorerOpen}
+          aria-label={
+            explorerOpen ? 'Hide project panel' : 'Show project panel'
+          }
+          onClick={() => setExplorerOpen((open) => !open)}
+        >
+          <span className="brand-mark small" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span aria-hidden="true">☰</span>
+        </button>
+        <h1 className="app-title">{workspace.project.name}</h1>
+        <span className="mode-badge" title="Simulated coordinator and agents">
+          Simulated
+        </span>
+        <div className="app-actions">
+          {attention ? (
+            <button
+              type="button"
+              className="attention-chip"
+              onClick={() => {
+                if (attention.taskKey) {
+                  addPane(attention.taskKey);
+                  setActivePane(
+                    Math.max(
+                      openPanes.findIndex(
+                        (room) => room.id === attention.taskKey,
+                      ),
+                      0,
+                    ),
+                  );
+                }
+              }}
+            >
+              <span aria-hidden="true">!</span> {attention.title}
+            </button>
+          ) : null}
+          <AddPaneMenu rooms={rooms} open={panes} onAdd={addPane} />
+          {canCancel && snapshot ? (
+            <button
+              type="button"
+              className="danger-action small"
+              disabled={busy}
+              onClick={cancel}
+            >
+              Stop
+            </button>
+          ) : null}
           <button
-            className="menu-close"
             type="button"
-            onClick={() => setMenuOpen(false)}
-            aria-label="Close navigation"
+            className="quiet-button"
+            disabled={busy}
+            onClick={() => void load(true)}
           >
-            ×
+            Refresh
           </button>
         </div>
-        <ApplicationNav
-          surface={surface}
+      </header>
+
+      {explorerOpen ? (
+        <ProjectExplorer
+          workspace={workspace}
           snapshot={snapshot}
-          attention={Boolean(attention)}
-          onNavigate={navigate}
+          selected={explorerItem}
+          onSelect={setExplorerItem}
         />
-        <div className="sidebar-foot">
-          <span className="local-pulse" aria-hidden="true" />
-          <div>
-            <strong>Local + private</strong>
-            <small>Simulated adapter</small>
-          </div>
-        </div>
-      </aside>
-      {menuOpen ? (
-        <button
-          className="nav-scrim"
-          type="button"
-          aria-label="Close navigation"
-          onClick={() => setMenuOpen(false)}
+      ) : null}
+      {explorerOpen && explorerItem ? (
+        <ExplorerDetail
+          item={explorerItem}
+          workspace={workspace}
+          tasks={tasks}
+          selectedTask={selectedTask}
+          snapshot={snapshot}
+          busy={busy}
+          stage={drawerStage}
+          onStage={setDrawerStage}
+          onSelectTask={(task) => {
+            setSelectedTask(task);
+            if (rooms.find((room) => room.id === task)?.open) addPane(task);
+          }}
+          onLaunch={() => void launch()}
+          onClose={() => setExplorerItem(undefined)}
         />
       ) : null}
 
-      <div className="application-main">
-        <header className="context-header">
-          <button
-            className="menu-trigger"
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open navigation"
-          >
-            ☰
-          </button>
-          <div className="project-identity">
-            <span>{workspace.project.repository}</span>
-            <strong>{workspace.project.name}</strong>
-          </div>
-          <div className="header-context">
-            <span className="branch-badge">⌘ {workspace.project.branch}</span>
-            {snapshot ? (
-              <button
-                type="button"
-                className={`run-phase ${attention ? 'needs-attention' : ''}`}
-                onClick={() => navigate('run')}
-              >
-                <span aria-hidden="true">{attention ? '!' : '●'}</span>
-                {terminal
-                  ? snapshot.phase.replaceAll('_', ' ')
-                  : `Run · ${snapshot.phase.replaceAll('_', ' ')}`}
-              </button>
-            ) : (
-              <span className="run-phase is-idle">No run</span>
-            )}
+      {openPanes.length > 1 ? (
+        <div className="pane-switcher" role="tablist" aria-label="Open panes">
+          {openPanes.map((room, index) => (
             <button
               type="button"
-              className="refresh-button"
-              disabled={busy}
-              onClick={() => void load(true)}
+              role="tab"
+              key={room.id}
+              aria-selected={index === activeIndex}
+              className={`category-${room.category}`}
+              onClick={() => setActivePane(index)}
             >
-              <span aria-hidden="true">↻</span>
-              <span>Refresh</span>
-              <small>{snapshot?.projection.lastSequence ?? 0}</small>
+              <span className="cat-dot" aria-hidden="true" />
+              {room.title}
+              {room.attention ? <b className="tab-badge">1</b> : null}
             </button>
-            {canCancel && snapshot ? (
-              <button
-                type="button"
-                className="header-stop"
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    () => cancelDemoRun(snapshot),
-                    'The run was cancelled and persisted.',
-                  )
-                }
-              >
-                Stop
-              </button>
-            ) : null}
-          </div>
-        </header>
-        {attention ? (
-          <button
-            type="button"
-            className="global-attention"
-            onClick={() => {
-              if (attention.taskKey) setSelectedTask(attention.taskKey);
-              navigate('run');
-            }}
+          ))}
+        </div>
+      ) : null}
+
+      <main className="panes" id="panes" data-count={openPanes.length}>
+        {openPanes.map((room, index) => (
+          <div
+            key={room.id}
+            className={`pane-slot ${index === activeIndex ? 'is-active' : ''}`}
           >
-            <span aria-hidden="true">!</span>
-            <strong>{attention.title}</strong>
-            <small>{attention.detail}</small>
-            <b>Review now →</b>
-          </button>
-        ) : null}
-        <main className="workspace" id="workspace" tabIndex={-1}>
-          {renderSurface()}
-        </main>
-      </div>
+            <Pane
+              room={room}
+              messages={buildRoomMessages(room, snapshot)}
+              canClose={room.kind !== 'coordinator' && openPanes.length > 1}
+              isPrimary={index === 0}
+              openRooms={openPanes}
+              onClose={() => closePane(room.id)}
+              {...paneHandlers}
+            />
+          </div>
+        ))}
+      </main>
 
       {actionError ? (
         <div className="toast toast-error" role="alert">

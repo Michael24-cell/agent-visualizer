@@ -1,8 +1,14 @@
 import type { DemoRunSnapshot, WorkspaceFixture } from '@harness/contracts';
 import type { CSSProperties, ReactNode } from 'react';
+import type {
+  RoomId,
+  RoomLayout,
+  RoomMessage,
+  RoomViewModel,
+} from './conversation';
+import { LayoutSwitch, Room } from './conversation-surfaces';
 import {
   buildReviewViewModel,
-  describeEvent,
   isTerminalRun,
   type FixtureTaskKey,
   type TaskViewModel,
@@ -53,15 +59,16 @@ export function TaskGraph({
           aria-label={`${task.title}, ${task.stateLabel}`}
           style={{ '--node-order': index } as CSSProperties}
         >
-          <span className="node-index">0{index + 1}</span>
           <span className="node-dot" aria-hidden="true">
             {task.statusSymbol}
           </span>
           <span className="node-text">
+            <span className="node-index">0{index + 1}</span>
             <strong>{task.title}</strong>
-            <small>{task.currentActivity}</small>
+            <small>
+              {task.agentProfile} · {task.stateLabel}
+            </small>
           </span>
-          <StatusPill task={task} />
         </button>
       ))}
     </div>
@@ -126,7 +133,7 @@ export function TaskInspector({ task }: { task: TaskViewModel }) {
       <div className="inspector-rail" aria-hidden="true" />
       <header className="inspector-header">
         <div>
-          <p className="eyebrow">Selected task</p>
+          <p className="eyebrow">Task</p>
           <h2>{task.title}</h2>
         </div>
         <StatusPill task={task} />
@@ -402,8 +409,8 @@ export function PlanSurface({
   return (
     <section className="surface plan-surface" aria-labelledby="plan-title">
       <SurfaceHeading
-        eyebrow={`Plan / ${workspace.plan.id}`}
-        title="Two tasks. One deliberate handoff."
+        eyebrow={`Plan · ${workspace.plan.id}`}
+        title={`Plan v1 · ${tasks.length} tasks · sequential`}
         description={workspace.plan.narrative}
         aside={<span className="truth-badge">Read-only simulated plan</span>}
       />
@@ -475,87 +482,8 @@ export function PlanSurface({
   );
 }
 
-export function RunControls({
-  snapshot,
-  busy,
-  onAdvance,
-  onDecision,
-  onCancel,
-  onLaunchNew,
-}: {
-  snapshot: DemoRunSnapshot;
-  busy: boolean;
-  onAdvance: () => void;
-  onDecision: (decision: 'approved' | 'denied') => void;
-  onCancel: () => void;
-  onLaunchNew: () => void;
-}) {
-  const approval = Object.values(snapshot.projection.approvals).find(
-    (item) => item.state === 'requested',
-  );
-  return (
-    <div className="run-controls" aria-label="Run controls">
-      <div>
-        <p className="eyebrow">Next supervised step</p>
-        <strong>{snapshot.nextStepLabel}</strong>
-      </div>
-      <div className="control-actions">
-        {snapshot.availableCommands.includes('approve') && approval ? (
-          <>
-            <button
-              className="primary-action"
-              type="button"
-              disabled={busy}
-              onClick={() => onDecision('approved')}
-            >
-              Approve bounded write
-            </button>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={busy}
-              onClick={() => onDecision('denied')}
-            >
-              Deny
-            </button>
-          </>
-        ) : null}
-        {snapshot.availableCommands.includes('advance') ? (
-          <button
-            className="primary-action"
-            type="button"
-            disabled={busy}
-            onClick={onAdvance}
-          >
-            {snapshot.nextStepLabel} <span aria-hidden="true">→</span>
-          </button>
-        ) : null}
-        {snapshot.availableCommands.includes('cancel') ? (
-          <button
-            className="danger-action"
-            type="button"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            Stop run
-          </button>
-        ) : null}
-        {isTerminalRun(snapshot) ? (
-          <button
-            className="primary-action"
-            type="button"
-            disabled={busy}
-            onClick={onLaunchNew}
-          >
-            Launch a new run <span aria-hidden="true">→</span>
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function RunSurface({
+  title,
   snapshot,
   tasks,
   selected,
@@ -563,12 +491,19 @@ export function RunSurface({
   onSelect,
   onView,
   busy,
+  rooms,
+  focusedRoom,
+  layout,
+  onLayout,
+  onFocusRoom,
+  messagesFor,
   onAdvance,
   onDecision,
   onCancel,
   onLaunchNew,
   onOpenPlan,
 }: {
+  title: string;
   snapshot?: DemoRunSnapshot | undefined;
   tasks: TaskViewModel[];
   selected: FixtureTaskKey;
@@ -576,8 +511,14 @@ export function RunSurface({
   onSelect: (task: FixtureTaskKey) => void;
   onView: (view: 'graph' | 'list') => void;
   busy: boolean;
+  rooms: readonly RoomViewModel[];
+  focusedRoom: RoomId;
+  layout: RoomLayout;
+  onLayout: (layout: RoomLayout) => void;
+  onFocusRoom: (room: RoomId) => void;
+  messagesFor: (room: RoomViewModel) => readonly RoomMessage[];
   onAdvance: () => void;
-  onDecision: (decision: 'approved' | 'denied') => void;
+  onDecision: (approvalId: string, decision: 'approved' | 'denied') => void;
   onCancel: () => void;
   onLaunchNew: () => void;
   onOpenPlan: () => void;
@@ -590,54 +531,40 @@ export function RunSurface({
         <span className="empty-glyph" aria-hidden="true">
           ◇
         </span>
-        <p className="eyebrow">Current run</p>
+        <p className="eyebrow">Run</p>
         <h1 id="run-title">No run has been launched.</h1>
         <p>
-          The approved fixture plan is ready. Launching creates the first
-          authoritative events.
+          The approved fixture plan is ready. Launching opens one room per task
+          and writes the first authoritative events.
         </p>
         <button className="primary-action" type="button" onClick={onOpenPlan}>
           Review the plan <span aria-hidden="true">→</span>
         </button>
       </section>
     );
-  const approval = Object.values(snapshot.projection.approvals).find(
-    (item) => item.state === 'requested',
-  );
-  const repair = Object.values(snapshot.projection.tasks).find(
-    (task) => task.state === 'repair_pending',
-  );
+  const coordinator = rooms.find((room) => room.kind === 'coordinator');
+  const focused = rooms.find((room) => room.id === focusedRoom) ?? coordinator;
+  const visibleRooms =
+    layout === 'split' && coordinator && focused && focused.kind === 'task'
+      ? [coordinator, focused]
+      : focused
+        ? [focused]
+        : [];
+  const roomHandlers = {
+    snapshot,
+    busy,
+    onDecision,
+    onAdvance,
+    onCancel,
+    onLaunchNew,
+  };
   return (
     <section className="surface run-surface" aria-labelledby="run-title">
       <SurfaceHeading
-        eyebrow="Current run / simulated adapter"
-        title="Account preferences loop"
-        description={`Phase: ${snapshot.phase.replaceAll('_', ' ')}. ${snapshot.nextStepLabel}.`}
-        aside={
-          <span className={`phase-badge phase-${snapshot.phase}`}>
-            {snapshot.projection.attentionRequired
-              ? '! Attention required'
-              : '● Authoritative state'}
-          </span>
-        }
+        eyebrow="Run · simulated adapter"
+        title={title}
+        description={`${snapshot.phase.replaceAll('_', ' ')} · event ${snapshot.projection.lastSequence} · persisted locally`}
       />
-      {approval || repair ? (
-        <aside className="attention-banner" aria-label="Run attention">
-          <span aria-hidden="true">!</span>
-          <div>
-            <strong>
-              {approval
-                ? `Approval needed: ${approval.requestedAction}`
-                : `Repair needed: ${repair?.title}`}
-            </strong>
-            <p>
-              {approval?.reason ??
-                'A blocking validation must be repaired before execution can continue.'}
-            </p>
-          </div>
-          <small>Decision blocks next step</small>
-        </aside>
-      ) : null}
       <div className="surface-toolbar run-toolbar">
         <div className="segmented" aria-label="Run view">
           <button
@@ -655,9 +582,11 @@ export function RunSurface({
             List
           </button>
         </div>
-        <span className="sequence-label">
-          Event {snapshot.projection.lastSequence} · persisted locally
-        </span>
+        <LayoutSwitch
+          layout={layout}
+          canSplit={focused?.kind === 'task'}
+          onLayout={onLayout}
+        />
       </div>
       <div className="workspace-with-inspector run-workspace">
         <div className="workspace-canvas">
@@ -665,47 +594,38 @@ export function RunSurface({
             <TaskGraph
               tasks={tasks}
               selected={selected}
-              onSelect={onSelect}
+              onSelect={(task) => {
+                onSelect(task);
+                onFocusRoom(task);
+              }}
               label="Current run task map"
             />
           ) : (
-            <TaskList tasks={tasks} selected={selected} onSelect={onSelect} />
+            <TaskList
+              tasks={tasks}
+              selected={selected}
+              onSelect={(task) => {
+                onSelect(task);
+                onFocusRoom(task);
+              }}
+            />
           )}
-          <RunControls
-            snapshot={snapshot}
-            busy={busy}
-            onAdvance={onAdvance}
-            onDecision={onDecision}
-            onCancel={onCancel}
-            onLaunchNew={onLaunchNew}
-          />
-          <details className="event-drawer">
-            <summary>
-              <span>
-                <strong>Evidence ledger</strong>
-                <small>Recent domain events</small>
-              </span>
-              <span>{snapshot.events.length} events</span>
-            </summary>
-            <ol>
-              {snapshot.events
-                .slice(-8)
-                .reverse()
-                .map((event) => (
-                  <li key={event.id}>
-                    <span>{String(event.sequence).padStart(2, '0')}</span>
-                    <div>
-                      <strong>
-                        {describeEvent(event, snapshot.projection)}
-                      </strong>
-                      <small>
-                        {event.source} · {event.type}
-                      </small>
-                    </div>
-                  </li>
-                ))}
-            </ol>
-          </details>
+          <div className={`room-stage layout-${layout}`}>
+            {visibleRooms.map((room) => (
+              <Room
+                key={room.id}
+                room={room}
+                messages={messagesFor(room)}
+                compact={layout === 'split' && room.kind === 'coordinator'}
+                showStep={
+                  layout === 'split'
+                    ? room.kind === 'coordinator'
+                    : room.id === focused?.id
+                }
+                {...roomHandlers}
+              />
+            ))}
+          </div>
         </div>
         <TaskInspector task={selectedTask} />
       </div>
@@ -845,8 +765,8 @@ export function HistorySurface({
     >
       <SurfaceHeading
         eyebrow="History"
-        title="Runs as outcomes, not chat archives."
-        description="Durable multi-run history and analytics are not connected in this increment."
+        title="History"
+        description="Local run outcomes. Durable multi-run history and analytics are not connected in this increment."
         aside={<span className="truth-badge">Preview boundary</span>}
       />
       {snapshot ? (
