@@ -311,7 +311,8 @@ export type AgentStepIntent =
       scope: string;
       consequences: string;
     }
-  | { kind: 'finish'; reason: string };
+  | { kind: 'finish'; reason: string }
+  | { kind: 'fail'; reason: string };
 
 export type AgentStepResult =
   | { ok: true; label: string; intents: readonly AgentStepIntent[] }

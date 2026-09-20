@@ -9,6 +9,7 @@
     "packages/domain",
     "packages/persistence",
     "packages/runtime-simulated",
+    "packages/runtime-claude",
     "apps/service",
     "apps/client"
   ],

@@ -1,0 +1,16 @@
+{
+  "name": "@harness/runtime-claude",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.278",
+    "@harness/contracts": "*",
+    "@harness/runtime-simulated": "*",
+    "zod": "^4.0.0"
+  }
+}

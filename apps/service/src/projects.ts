@@ -1708,12 +1708,13 @@ export class ProjectService {
         return;
       }
       case 'finish':
+      case 'fail':
         batch.emit(
           'task.state_changed',
           {
             taskId: task.id,
             from: 'working',
-            to: 'done',
+            to: intent.kind === 'finish' ? 'done' : 'failed',
             reason: intent.reason,
           },
           meta,
