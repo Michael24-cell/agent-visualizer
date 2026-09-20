@@ -16,6 +16,9 @@ type Screen =
 export function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' });
   const [projects, setProjects] = useState<ProjectListResponse['projects']>([]);
+  const [runtime, setRuntime] = useState<ProjectListResponse['runtime']>({
+    mode: 'simulated',
+  });
   const [actionError, setActionError] = useState<string>();
   const [notice, setNotice] = useState('');
 
@@ -23,6 +26,7 @@ export function App() {
     try {
       const list = await listProjects();
       setProjects(list.projects);
+      setRuntime(list.runtime);
       setScreen({ kind: 'home' });
     } catch (error) {
       setScreen({
@@ -41,6 +45,7 @@ export function App() {
       .then((list) => {
         if (!active) return;
         setProjects(list.projects);
+        setRuntime(list.runtime);
         setScreen({ kind: 'home' });
       })
       .catch((error: unknown) => {
@@ -108,6 +113,7 @@ export function App() {
       {screen.kind === 'home' ? (
         <Home
           projects={projects}
+          runtime={runtime}
           onOpen={(id) => void openProject(id)}
           onCreated={(id) => void openProject(id)}
           onError={setActionError}

@@ -231,7 +231,7 @@ export const AdapterProvenanceSchema = z.strictObject({
 
 export const MessageAuthorSchema = z.strictObject({
   role: MessageAuthorRoleSchema,
-  source: z.enum(['client', 'simulated_adapter', 'service']),
+  source: z.enum(['client', 'simulated_adapter', 'live_adapter', 'service']),
   agentId: AgentIdSchema.optional(),
   adapter: AdapterProvenanceSchema.optional(),
 });

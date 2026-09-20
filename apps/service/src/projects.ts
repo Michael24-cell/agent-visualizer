@@ -13,6 +13,7 @@ import {
   ProposalIdSchema,
   TaskIdSchema,
   ThreadIdSchema,
+  agentModel,
   modelForTier,
   type AdapterProvenanceSchema,
   type Agent,
@@ -69,6 +70,16 @@ import {
   revisePlan,
   type AgentStepIntent,
 } from '@harness/runtime-simulated';
+import {
+  CLAUDE_AGENT_ADAPTER,
+  buildSystemPrompt,
+  buildTaskPrompt,
+  runLiveTask,
+  sdkFrameSource,
+  type AskIntent,
+  type FrameSource,
+  type LiveTask,
+} from '@harness/runtime-claude';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import { renderBrief } from './brief.js';
@@ -99,6 +110,7 @@ export function commandErrorStatus(code: CommandErrorCode): number {
     case 'plan_superseded':
     case 'invalid_transition':
     case 'thread_closed':
+    case 'folder_required':
       return 409;
     default:
       return 400;
@@ -239,12 +251,15 @@ class ProjectBatch {
 
 const userAuthor: MessageAuthor = { role: 'user', source: 'client' };
 
-function agentAuthor(agent: Agent): MessageAuthor {
+function agentAuthor(
+  agent: Agent,
+  adapter: Adapter = SIMULATED_CONVERSATION_ADAPTER,
+): MessageAuthor {
   return {
     role: 'agent',
-    source: 'simulated_adapter',
+    source: adapter.mode === 'live' ? 'live_adapter' : 'simulated_adapter',
     agentId: agent.id,
-    adapter: SIMULATED_CONVERSATION_ADAPTER,
+    adapter,
   };
 }
 
@@ -267,8 +282,11 @@ export interface ProjectServiceOptions {
   readonly replies?:
     | { readonly mode: 'inline' }
     | { readonly mode: 'deferred'; readonly delayMs: number };
-  // Reported to the client. Only the simulator answers in this build.
+  // Which runtime executes agent tasks. Live runs each task on a Claude
+  // agent in the attached folder; the coordinator stays simulated.
   readonly runtime?: RuntimeInfo;
+  // Where live frames come from. Tests substitute fake frames.
+  readonly frames?: FrameSource;
 }
 
 export class ProjectService {
@@ -276,6 +294,13 @@ export class ProjectService {
   readonly folders: FolderOptions;
   private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
   private readonly runtime: RuntimeInfo;
+  private readonly frames: FrameSource;
+  // Live runs by task id, and the permission waits they are paused on.
+  private readonly liveRuns = new Map<string, LiveTask>();
+  private readonly askWaiters = new Map<
+    string,
+    (decision: 'approved' | 'denied') => void
+  >();
   // Threads with a reply in flight, and the promise that finishes it.
   private readonly pending = new Map<string, Promise<void>>();
 
@@ -287,6 +312,11 @@ export class ProjectService {
     this.folders = options.folders ?? {};
     this.replies = options.replies ?? { mode: 'inline' };
     this.runtime = options.runtime ?? { mode: 'simulated' };
+    this.frames = options.frames ?? sdkFrameSource;
+  }
+
+  get isLive(): boolean {
+    return this.runtime.mode === 'live';
   }
 
   // Resolves once every in-flight reply for the project has landed.
@@ -295,12 +325,35 @@ export class ProjectService {
       (key) => !projectId || key.startsWith(`${projectId}:`),
     );
     await Promise.all(keys.map((key) => this.pending.get(key)));
+    const runs = [...this.liveRuns.entries()]
+      .filter(([taskId]) => !projectId || taskId.includes(safe(projectId)))
+      .map(([, run]) => run.done);
+    await Promise.all(runs);
+  }
+
+  // Stops every live run; used on shutdown so no agent keeps working
+  // after the harness is gone.
+  stopAll(): void {
+    for (const run of this.liveRuns.values()) run.stop();
+    for (const resolve of this.askWaiters.values()) resolve('denied');
+    this.askWaiters.clear();
   }
 
   busyThreadIds(projectId: ProjectId): string[] {
-    return [...this.pending.keys()]
+    const replying = [...this.pending.keys()]
       .filter((key) => key.startsWith(`${projectId}:`))
       .map((key) => key.slice(projectId.length + 1));
+    if (!this.isLive || this.liveRuns.size === 0) return replying;
+    const projection = this.store.getProjection(projectId);
+    if (!projection) return replying;
+    const working: string[] = [];
+    for (const taskId of this.liveRuns.keys()) {
+      const task = projection.tasks[taskId];
+      if (task?.state !== 'working') continue;
+      const threadId = projection.agents[task.agentId]?.threadId;
+      if (threadId) working.push(threadId);
+    }
+    return [...new Set([...replying, ...working])];
   }
 
   // --- Reads ---------------------------------------------------------------
@@ -335,6 +388,7 @@ export class ProjectService {
         project: projection.project,
         summary: summarizeProject(projection),
       })),
+      runtime: this.runtime,
     };
   }
 
@@ -390,10 +444,170 @@ export class ProjectService {
     }
     try {
       const { projection, receipt } = work();
+      if (this.isLive) this.reconcileLiveRuns(projection.projectId);
       return { receipt, project: this.response(projection) };
     } catch (error) {
       throw translateDomainError(error);
     }
+  }
+
+  // --- Live runs -----------------------------------------------------------
+
+  // After every command: start a run for each task that is now working
+  // without one, stop runs whose task is no longer in progress, and
+  // release permission waits whose ask was decided.
+  private reconcileLiveRuns(projectId: ProjectId) {
+    const projection = this.requireProjection(projectId);
+    for (const [askId, resolve] of [...this.askWaiters.entries()]) {
+      const ask = projection.asks[askId];
+      if (!ask || ask.state === 'open') continue;
+      this.askWaiters.delete(askId);
+      resolve(ask.state === 'approved' ? 'approved' : 'denied');
+    }
+    for (const [taskId, run] of [...this.liveRuns.entries()]) {
+      const task = projection.tasks[taskId];
+      if (!task) continue;
+      if (task.state !== 'working' && task.state !== 'needs_you') {
+        run.stop();
+        this.liveRuns.delete(taskId);
+      }
+    }
+    for (const agent of Object.values(projection.agents)) {
+      const task = agent.currentTaskId
+        ? projection.tasks[agent.currentTaskId]
+        : undefined;
+      if (!task || task.state !== 'working' || this.liveRuns.has(task.id))
+        continue;
+      this.startLiveRun(projectId, agent, task);
+    }
+  }
+
+  private startLiveRun(projectId: ProjectId, agent: Agent, task: AgentTask) {
+    const projection = this.requireProjection(projectId);
+    const repository = projection.project.repository;
+    const snapshot = Object.values(projection.methodSnapshots).find(
+      (candidate) => candidate.taskId === task.id,
+    );
+    let count = 0;
+    const suffix = () => `${safe(task.id)}_${(count += 1)}`;
+
+    const emit = (intents: readonly AgentStepIntent[]): boolean => {
+      try {
+        const current = this.requireProjection(projectId);
+        const liveTask = current.tasks[task.id];
+        const liveAgent = current.agents[agent.id];
+        if (!liveTask || !liveAgent || liveTask.state !== 'working')
+          return false;
+        const batch = new ProjectBatch(
+          this.store,
+          projectId,
+          randomUUID(),
+          this.now(),
+          current,
+        );
+        for (const intent of intents) {
+          this.materializeStep(
+            batch,
+            projectId,
+            liveAgent,
+            liveTask,
+            this.guardFinish(batch, liveTask, intent),
+            suffix(),
+            CLAUDE_AGENT_ADAPTER,
+          );
+        }
+        if (batch.current.tasks[task.id]?.state === 'done') {
+          this.handOff(batch, task.id);
+        }
+        batch.commit();
+        this.reconcileLiveRuns(projectId);
+        return true;
+      } catch (error) {
+        this.postFailure(projectId, projection.threads[agent.threadId]!, error);
+        return false;
+      }
+    };
+
+    const ask = (intent: AskIntent): Promise<'approved' | 'denied'> => {
+      const current = this.requireProjection(projectId);
+      if (current.tasks[task.id]?.state !== 'working') {
+        return Promise.resolve('denied');
+      }
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        randomUUID(),
+        this.now(),
+        current,
+      );
+      this.materializeStep(
+        batch,
+        projectId,
+        current.agents[agent.id]!,
+        current.tasks[task.id]!,
+        intent,
+        suffix(),
+        CLAUDE_AGENT_ADAPTER,
+      );
+      const askId = batch.createdIds.asks?.[0];
+      batch.commit();
+      if (!askId) return Promise.resolve('denied');
+      return new Promise((resolve) => {
+        this.askWaiters.set(askId, resolve);
+      });
+    };
+
+    if (!repository) {
+      emit([
+        {
+          kind: 'fail',
+          reason: 'Attach a folder to this project before starting live work.',
+        },
+      ]);
+      return;
+    }
+    const run = runLiveTask(
+      {
+        cwd: repository.path,
+        model: agentModel(agent),
+        systemPrompt: buildSystemPrompt({
+          projectName: projection.project.name,
+          agentName: agent.name,
+          method: snapshot?.resolved,
+        }),
+        prompt: buildTaskPrompt(task),
+      },
+      { emit, ask },
+      this.frames,
+    );
+    this.liveRuns.set(task.id, run);
+    void run.done.finally(() => {
+      if (this.liveRuns.get(task.id) === run) this.liveRuns.delete(task.id);
+    });
+  }
+
+  // A live agent says it is done, but a required check has no passing run
+  // on record: that is a failure with a clear reason, not a quiet pass.
+  private guardFinish(
+    batch: ProjectBatch,
+    task: AgentTask,
+    intent: AgentStepIntent,
+  ): AgentStepIntent {
+    if (intent.kind !== 'finish') return intent;
+    const checks = Object.values(batch.current.checks).filter(
+      (check) => check.taskId === task.id,
+    );
+    const unmet = task.requiredChecks.filter(
+      (name) =>
+        !checks.some(
+          (check) => check.name === name && check.state === 'passed',
+        ),
+    );
+    if (unmet.length === 0) return intent;
+    return {
+      kind: 'fail',
+      reason: `Reported done, but required check "${unmet[0]}" never passed. ${intent.reason}`,
+    };
   }
 
   private assertSequence(label: string, actual: number, expected: number) {
@@ -747,6 +961,18 @@ export class ProjectService {
       const currentTask = agent.currentTaskId
         ? batch.current.tasks[agent.currentTaskId]
         : undefined;
+      if (this.isLive) {
+        this.replyLive(
+          batch,
+          projectId,
+          thread,
+          agent,
+          currentTask,
+          command,
+          messageId,
+        );
+        return;
+      }
       const intents = planAgentIntents({
         agent,
         currentTask,
@@ -807,6 +1033,72 @@ export class ProjectService {
         messageId,
       );
     }
+  }
+
+  // A live agent thread. Work starts a task that the runner picks up
+  // after commit; plain chat is not forwarded into a running session yet,
+  // and the harness says so instead of answering in the agent's voice.
+  private replyLive(
+    batch: ProjectBatch,
+    projectId: ProjectId,
+    thread: Thread,
+    agent: Agent,
+    currentTask: AgentTask | undefined,
+    command: PostMessageCommand,
+    messageId: string | undefined,
+  ) {
+    const inProgress =
+      currentTask &&
+      ['waiting', 'working', 'needs_you'].includes(currentTask.state);
+    if (command.intent !== 'start_work') {
+      batch.post(
+        thread,
+        systemAuthor,
+        inProgress
+          ? `${agent.name} is working on "${currentTask.title}". Messages aren't forwarded into a running task yet — stop it or wait for it to finish.`
+          : `${agent.name} runs on Claude and takes work, not chat, in this build. Type /start followed by what to do.`,
+      );
+      return;
+    }
+    if (inProgress) {
+      throw new ProjectCommandError(
+        'agent_busy',
+        `${agent.name} is already working on "${currentTask.title}". Stop it first.`,
+      );
+    }
+    if (!batch.current.project.repository) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'Attach a folder to this project before starting live work.',
+      );
+    }
+    const taskId = TaskIdSchema.parse(`task_${safe(command.commandId)}`);
+    batch.emit(
+      'task.assigned',
+      {
+        task: {
+          id: taskId,
+          projectId,
+          agentId: agent.id,
+          title: command.body.split('\n')[0]!.slice(0, 200),
+          objective: command.body,
+          category: agent.category,
+          skills: [],
+          scope: [],
+          scopeHistory: [],
+          dependsOn: [],
+          inputsSatisfied: [],
+          expectedOutputs: [],
+          requiredChecks: [],
+          state: 'working',
+          ...(messageId ? { originMessageId: messageId } : {}),
+          createdAtSequence: batch.nextSequence(),
+        },
+      },
+      { agentId: agent.id, taskId, source: 'user' },
+    );
+    batch.created('tasks', taskId);
+    this.pinMethod(batch, taskId, safe(command.commandId));
   }
 
   // --- Planning and dispersal ---------------------------------------------
@@ -1154,6 +1446,12 @@ export class ProjectService {
     const coordinator = Object.values(batch.current.threads).find(
       (thread) => thread.kind === 'coordinator',
     )!;
+    if (this.isLive && !batch.current.project.repository) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'Attach a folder to this project before assigning a plan to live agents.',
+      );
+    }
     const taskIds: string[] = [];
     plan.tasks.forEach((row, index) => {
       let agent = Object.values(batch.current.agents).find(
@@ -1606,6 +1904,12 @@ export class ProjectService {
         agent.lastSequence,
         command.expectedSequence,
       );
+      if (this.isLive) {
+        throw new ProjectCommandError(
+          'invalid_transition',
+          `${agent.name} runs on Claude and works on its own; there is no step to take by hand.`,
+        );
+      }
       const step = nextAgentStep(projection, agent);
       if (!step.ok)
         throw new ProjectCommandError('invalid_transition', step.reason);
@@ -1644,17 +1948,18 @@ export class ProjectService {
     task: AgentTask,
     intent: AgentStepIntent,
     suffix: string,
+    adapter: Adapter = SIMULATED_CONVERSATION_ADAPTER,
   ) {
     const thread = batch.current.threads[agent.threadId]!;
     const meta = {
       agentId: agent.id,
       taskId: task.id,
       source: 'agent' as const,
-      adapter: SIMULATED_CONVERSATION_ADAPTER,
+      adapter,
     };
     switch (intent.kind) {
       case 'say':
-        batch.post(thread, agentAuthor(agent), intent.body, 'chat', {
+        batch.post(thread, agentAuthor(agent, adapter), intent.body, 'chat', {
           taskId: task.id,
         });
         return;
@@ -1747,7 +2052,7 @@ export class ProjectService {
         batch.created('asks', askId);
         batch.post(
           thread,
-          agentAuthor(agent),
+          agentAuthor(agent, adapter),
           `Needs you: ${intent.action}. ${intent.reason} Would write to ${intent.scope}.`,
           'chat',
           { taskId: task.id, askId },
@@ -1895,16 +2200,15 @@ export class ProjectService {
           },
           meta,
         );
-        batch.post(
-          thread,
-          agentAuthor(agent),
-          `Thanks — going ahead with: ${ask.action.toLowerCase()}.`,
-          'chat',
-          {
-            taskId: task.id,
-            askId: ask.id,
-          },
-        );
+        if (!this.isLive) {
+          batch.post(
+            thread,
+            agentAuthor(agent),
+            `Thanks — going ahead with: ${ask.action.toLowerCase()}.`,
+            'chat',
+            { taskId: task.id, askId: ask.id },
+          );
+        }
       } else {
         batch.emit(
           'task.state_changed',
@@ -1918,8 +2222,10 @@ export class ProjectService {
         );
         batch.post(
           thread,
-          agentAuthor(agent),
-          `Understood. Without that write I can't finish "${task.title}", so I've marked it failed. Start me again with a different approach whenever you like.`,
+          this.isLive ? systemAuthor : agentAuthor(agent),
+          this.isLive
+            ? `Denied: ${ask.action.toLowerCase()}. The agent was stopped and "${task.title}" is marked failed.`
+            : `Understood. Without that write I can't finish "${task.title}", so I've marked it failed. Start me again with a different approach whenever you like.`,
           'chat',
           { taskId: task.id, askId: ask.id },
         );

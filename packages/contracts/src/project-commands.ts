@@ -136,6 +136,7 @@ export const CommandErrorCodeSchema = z.enum([
   'invalid_transition',
   'folder_not_found',
   'folder_not_allowed',
+  'folder_required',
 ]);
 
 export const CommandErrorSchema = z.strictObject({
@@ -179,6 +180,7 @@ export const ProjectListItemSchema = z.strictObject({
 
 export const ProjectListResponseSchema = z.strictObject({
   projects: z.array(ProjectListItemSchema),
+  runtime: RuntimeInfoSchema.default({ mode: 'simulated' }),
 });
 
 // Cursor pagination over a thread. Cursors are the sequence number of the

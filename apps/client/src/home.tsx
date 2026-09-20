@@ -9,11 +9,13 @@ import { nameFromRequest, statusNotes } from './project-notes';
 
 export function Home({
   projects,
+  runtime,
   onOpen,
   onCreated,
   onError,
 }: {
   projects: ProjectListResponse['projects'];
+  runtime: ProjectListResponse['runtime'];
   onOpen: (projectId: string) => void;
   onCreated: (projectId: string) => void;
   onError: (message: string) => void;
@@ -166,7 +168,10 @@ export function Home({
         <p className="home-hint">
           Enter starts a project: a coordinator that plans with you, and agent
           panes you can type into directly. Attach a folder so agents know where
-          the code lives. Simulated agents in this build.
+          the code lives.{' '}
+          {runtime.mode === 'live'
+            ? 'Agents run on Claude with your API key.'
+            : 'Agents are simulated; set ANTHROPIC_API_KEY to run them on Claude.'}
         </p>
       </main>
     </div>

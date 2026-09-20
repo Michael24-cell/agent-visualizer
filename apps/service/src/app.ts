@@ -81,6 +81,7 @@ export function createService(config: AppConfig) {
       config.replyDelayMs === undefined
         ? { mode: 'inline' }
         : { mode: 'deferred', delayMs: config.replyDelayMs },
+    runtime: { mode: config.liveAgents ? 'live' : 'simulated' },
   });
   if (config.demoProject) projects.ensureDemoProject();
   const foundationRecord: FoundationRecord = {
@@ -333,6 +334,7 @@ export function createService(config: AppConfig) {
   registerProjectRoutes(service, projects);
 
   service.addHook('onClose', async () => {
+    projects.stopAll();
     await projects.whenIdle();
     store.close();
   });

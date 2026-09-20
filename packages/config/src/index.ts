@@ -19,6 +19,11 @@ const EnvironmentSchema = z.object({
     .min(0)
     .max(30_000)
     .default(900),
+  // Agents run on Claude when a key is present. Only its presence is read;
+  // the SDK subprocess inherits the variable itself. 'simulated' forces
+  // the simulator even with a key set.
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  HARNESS_RUNTIME: z.enum(['auto', 'simulated', 'live']).default('auto'),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -33,6 +38,7 @@ export interface AppConfig {
   readonly demoProject: boolean;
   readonly folderRoot?: string | undefined;
   readonly replyDelayMs?: number | undefined;
+  readonly liveAgents: boolean;
 }
 
 function defaultDataDirectory(
@@ -87,5 +93,9 @@ export function loadAppConfig(
       ? { folderRoot: environment.HARNESS_FOLDER_ROOT }
       : {}),
     replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
+    liveAgents:
+      environment.HARNESS_RUNTIME === 'live' ||
+      (environment.HARNESS_RUNTIME === 'auto' &&
+        Boolean(environment.ANTHROPIC_API_KEY)),
   };
 }

@@ -494,7 +494,7 @@ export function LivePane({
         {work ? (
           <span className={`pane-state work-${work}`}>{workLabels[work]}</span>
         ) : null}
-        {work === 'working' ? (
+        {work === 'working' && project.runtime.mode !== 'live' ? (
           <button
             type="button"
             className="secondary-action small"
