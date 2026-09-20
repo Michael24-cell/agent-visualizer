@@ -8,8 +8,8 @@ import {
   ProjectResponseSchema,
   type ProjectResponse,
 } from '@harness/contracts';
-import { createProject, listMethods, updateBriefField } from './api';
-import { ProjectDetail, ProjectPanel } from './project-panel';
+import { listMethods, updateBriefField } from './api';
+import { ProjectDetail } from './project-panel';
 
 vi.mock('./api', () => ({
   applyMethod: vi.fn(),
@@ -107,48 +107,6 @@ afterEach(() => {
 });
 
 describe('project panel', () => {
-  it('lists the sections with honest notes and creates a project by name', async () => {
-    const created = project('missing');
-    vi.mocked(createProject).mockResolvedValue(
-      CommandResponseSchema.parse({
-        receipt: {
-          commandId: '00000000-0000-4000-8000-000000000009',
-          firstSequence: 1,
-          lastSequence: 3,
-          createdIds: {},
-          replayed: false,
-        },
-        project: created,
-      }),
-    );
-    const onCreated = vi.fn();
-    render(
-      <ProjectPanel
-        projects={[
-          { project: created.projection.project, summary: created.summary },
-        ]}
-        project={created}
-        selected={undefined}
-        busy={false}
-        onSelect={() => undefined}
-        onSwitch={() => undefined}
-        onCreated={onCreated}
-        onError={() => undefined}
-      />,
-    );
-    expect(screen.getByText('0 of 3 decided')).toBeTruthy();
-    expect(screen.getByText('default · customize')).toBeTruthy();
-    expect(screen.getAllByText('none yet')).toHaveLength(2);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: '+ New project' }));
-    await user.type(
-      screen.getByLabelText('New project name'),
-      'Billing{Enter}',
-    );
-    await waitFor(() => expect(createProject).toHaveBeenCalledWith('Billing'));
-    expect(onCreated).toHaveBeenCalledWith(created);
-  });
-
   it('confirms an inferred Brief field through the command, with the brief sequence', async () => {
     const before = project('inferred');
     vi.mocked(updateBriefField).mockResolvedValue(

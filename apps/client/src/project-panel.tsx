@@ -7,18 +7,16 @@ import {
   type MethodDefinition,
   type MethodSectionId,
   type ProjectEvent,
-  type ProjectListResponse,
   type ProjectResponse,
 } from '@harness/contracts';
 import {
   applyMethod,
-  createProject,
   listMethods,
   overrideMethod,
   readEvents,
   updateBriefField,
 } from './api';
-import type { ExplorerItem } from './explorer';
+export type DetailItem = 'brief' | 'method' | 'plan' | 'agents' | 'history';
 import { workLabels } from './live';
 
 // The left panel for a persisted project: switch projects, start a new one,
@@ -52,162 +50,6 @@ const sectionLabels: Record<MethodSectionId, string> = {
   checks: 'Checks',
   scopeRestrictions: 'Scope restrictions',
 };
-
-function briefNote(project: ProjectResponse): string {
-  if (project.summary.briefReady) return 'ready';
-  const settled = BRIEF_REQUIRED_FIELDS.filter((id) =>
-    ['confirmed', 'skipped', 'corrected'].includes(
-      project.projection.brief.fields[id].state,
-    ),
-  ).length;
-  return `${settled} of ${BRIEF_REQUIRED_FIELDS.length} decided`;
-}
-
-function methodNote(project: ProjectResponse): string {
-  const method = project.projection.method;
-  return method
-    ? `${method.definition.title} · v${method.version}`
-    : 'default · customize';
-}
-
-function planNote(project: ProjectResponse): string {
-  const plans = Object.values(project.projection.plans);
-  const current = plans
-    .filter((plan) => !plan.supersededByPlanId)
-    .sort((a, b) => b.version - a.version)[0];
-  if (!current) return 'none yet';
-  return current.assignedAtSequence
-    ? `v${current.version} · assigned`
-    : `v${current.version} · proposed`;
-}
-
-function agentsNote(project: ProjectResponse): string {
-  const counts = project.summary.agentCounts;
-  const total = Object.values(project.projection.agents).length;
-  const active = counts.working + counts.waiting + counts.needs_you;
-  return total ? `${total} · ${active} active` : 'none yet';
-}
-
-export function ProjectPanel({
-  projects,
-  project,
-  selected,
-  busy,
-  onSelect,
-  onSwitch,
-  onCreated,
-  onError,
-}: {
-  projects: ProjectListResponse['projects'];
-  project: ProjectResponse;
-  selected: ExplorerItem | undefined;
-  busy: boolean;
-  onSelect: (item: ExplorerItem | undefined) => void;
-  onSwitch: (projectId: string) => void;
-  onCreated: (project: ProjectResponse) => void;
-  onError: (message: string) => void;
-}) {
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const rows: Array<{ id: ExplorerItem; label: string; note: string }> = [
-    { id: 'brief', label: 'Brief', note: briefNote(project) },
-    { id: 'method', label: 'Method', note: methodNote(project) },
-    { id: 'plan', label: 'Plan', note: planNote(project) },
-    { id: 'agents', label: 'Agents', note: agentsNote(project) },
-    {
-      id: 'history',
-      label: 'History',
-      note: `${project.projection.lastSequence} events`,
-    },
-  ];
-  const submit = async (event: { preventDefault: () => void }) => {
-    event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    try {
-      const created = await createProject(trimmed);
-      setName('');
-      setCreating(false);
-      onCreated(created.project);
-    } catch (error) {
-      onError(
-        error instanceof Error ? error.message : 'The project was not created.',
-      );
-    }
-  };
-  return (
-    <nav className="explorer" aria-label="Project">
-      <div className="explorer-project">
-        <label className="project-switch">
-          <span className="sr-only">Project</span>
-          <select
-            value={project.projection.projectId}
-            aria-label="Project"
-            onChange={(event) => onSwitch(event.target.value)}
-          >
-            {projects.map((item) => (
-              <option key={item.project.id} value={item.project.id}>
-                {item.project.name}
-                {item.project.origin === 'demo' ? ' (demo)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        {creating ? (
-          <form
-            className="project-new"
-            onSubmit={(event) => void submit(event)}
-          >
-            <input
-              autoFocus
-              value={name}
-              placeholder="Project name"
-              aria-label="New project name"
-              maxLength={120}
-              onChange={(event) => setName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') setCreating(false);
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  void submit(event);
-                }
-              }}
-            />
-            <button
-              type="submit"
-              className="primary-action small"
-              disabled={busy}
-            >
-              Create
-            </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="quiet-button project-new-button"
-            onClick={() => setCreating(true)}
-          >
-            + New project
-          </button>
-        )}
-      </div>
-      <ul>
-        {rows.map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              aria-pressed={selected === row.id}
-              onClick={() => onSelect(selected === row.id ? undefined : row.id)}
-            >
-              <span>{row.label}</span>
-              <small>{row.note}</small>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
 
 // ---------------------------------------------------------------------------
 
@@ -714,8 +556,8 @@ export function ProjectDetail({
   item,
   onClose,
   ...props
-}: DetailProps & { item: ExplorerItem; onClose: () => void }) {
-  const titles: Record<ExplorerItem, string> = {
+}: DetailProps & { item: DetailItem; onClose: () => void }) {
+  const titles: Record<DetailItem, string> = {
     brief: 'Brief',
     method: 'Method',
     plan: 'Plans',

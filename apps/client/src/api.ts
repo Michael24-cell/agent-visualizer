@@ -1,24 +1,18 @@
 import {
   CommandResponseSchema,
-  DemoRunSnapshotSchema,
-  LaunchDemoRunResponseSchema,
   MessagesPageSchema,
   MethodDefinitionSchema,
   ProjectEventsPageSchema,
   ProjectListResponseSchema,
   ProjectResponseSchema,
-  WorkspaceResponseSchema,
   type BriefFieldId,
   type CommandResponse,
-  type DemoRunSnapshot,
   type MessagesPage,
   type MethodDefinition,
   type MethodSectionId,
   type ProjectEventsPage,
   type ProjectListResponse,
   type ProjectResponse,
-  type RunId,
-  type WorkspaceResponse,
 } from '@harness/contracts';
 
 export class ApiError extends Error {
@@ -50,77 +44,6 @@ async function request(input: string, init?: RequestInit): Promise<Response> {
     );
   }
   return response;
-}
-
-export async function readWorkspace(): Promise<WorkspaceResponse> {
-  return WorkspaceResponseSchema.parse(
-    await (await request('/api/workspace')).json(),
-  );
-}
-
-export async function launchDemoRun(planVersionId: string): Promise<RunId> {
-  const response = await request('/api/demo-runs', {
-    method: 'POST',
-    body: JSON.stringify({ planVersionId }),
-  });
-  return LaunchDemoRunResponseSchema.parse(await response.json()).runId;
-}
-
-export async function readDemoRun(runId: RunId): Promise<DemoRunSnapshot> {
-  return DemoRunSnapshotSchema.parse(
-    await (await request(`/api/demo-runs/${runId}`)).json(),
-  );
-}
-
-export async function advanceDemoRun(
-  snapshot: DemoRunSnapshot,
-): Promise<DemoRunSnapshot> {
-  return DemoRunSnapshotSchema.parse(
-    await (
-      await request(`/api/demo-runs/${snapshot.projection.runId}/advance`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedSequence: snapshot.projection.lastSequence,
-        }),
-      })
-    ).json(),
-  );
-}
-
-export async function decideApproval(
-  snapshot: DemoRunSnapshot,
-  approvalId: string,
-  decision: 'approved' | 'denied',
-): Promise<DemoRunSnapshot> {
-  return DemoRunSnapshotSchema.parse(
-    await (
-      await request(
-        `/api/demo-runs/${snapshot.projection.runId}/approvals/${approvalId}`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            expectedSequence: snapshot.projection.lastSequence,
-            decision,
-          }),
-        },
-      )
-    ).json(),
-  );
-}
-
-export async function cancelDemoRun(
-  snapshot: DemoRunSnapshot,
-): Promise<DemoRunSnapshot> {
-  return DemoRunSnapshotSchema.parse(
-    await (
-      await request(`/api/demo-runs/${snapshot.projection.runId}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify({
-          expectedSequence: snapshot.projection.lastSequence,
-        }),
-      })
-    ).json(),
-  );
 }
 
 // --- Projects, threads, agents (Increment 2.6) ------------------------------
