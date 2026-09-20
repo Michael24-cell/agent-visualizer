@@ -8,6 +8,7 @@ import {
   ProjectResponseSchema,
   type AgentModel,
   type BriefFieldId,
+  type PlanSectionId,
   type CommandResponse,
   type FolderListing,
   type MessagesPage,
@@ -295,6 +296,27 @@ export async function overrideMethod(
           expectedSequence,
           sectionId,
           value,
+        }),
+      })
+    ).json(),
+  );
+}
+
+export async function editPlanSection(
+  projectId: string,
+  expectedSequence: number,
+  sectionId: PlanSectionId,
+  lines: string[],
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/plan/sections`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          sectionId,
+          lines,
         }),
       })
     ).json(),

@@ -1,5 +1,6 @@
 import {
   BRIEF_REQUIRED_FIELDS,
+  type ProjectEvent,
   type ProjectResponse,
 } from '@harness/contracts';
 
@@ -67,14 +68,86 @@ export function methodNote(project: ProjectResponse): string {
 }
 
 export function planNote(project: ProjectResponse): string {
+  const sections = Object.values(
+    project.projection.planDocument.sections,
+  ).filter((section) => section.lines.length > 0).length;
   const plans = Object.values(project.projection.plans);
   const current = plans
     .filter((plan) => !plan.supersededByPlanId)
     .sort((a, b) => b.version - a.version)[0];
-  if (!current) return 'none yet';
-  return current.assignedAtSequence
-    ? `v${current.version} · assigned`
-    : `v${current.version} · proposed`;
+  const doc = sections
+    ? `${sections} ${sections === 1 ? 'section' : 'sections'}`
+    : 'empty';
+  if (!current) return `${doc} · no tasks yet`;
+  return `${doc} · tasks v${current.version} ${
+    current.assignedAtSequence ? 'assigned' : 'proposed'
+  }`;
+}
+
+// The edit history of the Plan and Method documents, newest first, with
+// what each edit added and removed compared to the previous state.
+export interface DocumentChange {
+  readonly sequence: number;
+  readonly document: 'plan' | 'method';
+  readonly section: string;
+  readonly source: 'user' | 'coordinator';
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+}
+
+export function documentChanges(
+  events: readonly ProjectEvent[],
+  titles: {
+    readonly plan: Readonly<Record<string, string>>;
+    readonly method: Readonly<Record<string, string>>;
+  },
+): DocumentChange[] {
+  const state = new Map<string, readonly string[]>();
+  const changes: DocumentChange[] = [];
+  for (const event of events) {
+    let key: string;
+    let document: 'plan' | 'method';
+    let lines: readonly string[];
+    let section: string;
+    let source: 'user' | 'coordinator';
+    if (event.type === 'plan.section_edited') {
+      document = 'plan';
+      key = `plan:${event.payload.sectionId}`;
+      lines = event.payload.lines;
+      section = titles.plan[event.payload.sectionId] ?? event.payload.sectionId;
+      source = event.payload.source;
+    } else if (event.type === 'method.override_recorded') {
+      document = 'method';
+      key = `method:${event.payload.sectionId}`;
+      lines = event.payload.value;
+      section =
+        titles.method[event.payload.sectionId] ?? event.payload.sectionId;
+      source = event.payload.source ?? 'user';
+    } else if (event.type === 'method.applied') {
+      // Applying a Method resets every section to the catalog text.
+      for (const sectionId of Object.keys(titles.method)) {
+        const value =
+          event.payload.definition[
+            sectionId as keyof typeof event.payload.definition
+          ];
+        if (Array.isArray(value)) state.set(`method:${sectionId}`, value);
+      }
+      continue;
+    } else {
+      continue;
+    }
+    const previous = state.get(key) ?? [];
+    state.set(key, lines);
+    changes.push({
+      sequence: event.sequence,
+      document,
+      section,
+      source,
+      added: lines.filter((line) => !previous.includes(line)),
+      removed: previous.filter((line) => !lines.includes(line)),
+    });
+  }
+  return changes.reverse();
 }
 
 export function agentsNote(project: ProjectResponse): string {

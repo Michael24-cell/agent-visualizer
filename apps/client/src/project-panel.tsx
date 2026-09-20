@@ -3,6 +3,8 @@ import {
   AGENT_MODELS,
   BRIEF_REQUIRED_FIELDS,
   BriefFieldIdSchema,
+  PLAN_SECTIONS,
+  PlanSectionIdSchema,
   agentModel,
   MethodSectionIdSchema,
   type BriefFieldId,
@@ -13,11 +15,14 @@ import {
 } from '@harness/contracts';
 import {
   applyMethod,
+  editPlanSection,
   listMethods,
   overrideMethod,
   readEvents,
   updateBriefField,
 } from './api';
+import { DocumentSection } from './document-section';
+import { documentChanges, type DocumentChange } from './project-notes';
 export type DetailItem = 'brief' | 'method' | 'plan' | 'agents' | 'history';
 import { workLabels } from './live';
 
@@ -50,6 +55,25 @@ const sectionLabels: Record<MethodSectionId, string> = {
   skills: 'Skills',
   outputExpectations: 'Output expectations',
   checks: 'Checks',
+  scopeRestrictions: 'Scope restrictions',
+};
+const sectionHints: Record<MethodSectionId, string> = {
+  hardRules: 'Things agents must never do or always do.',
+  preferences: 'How to lean when there is a choice.',
+  promptGuidance: 'Extra instruction every agent gets.',
+  skills: 'Named skills agents should apply.',
+  outputExpectations: 'What a finished task hands back.',
+  checks: 'Commands that must pass before done.',
+  scopeRestrictions: 'Where agents may and may not write.',
+};
+// The coordinator phrase that edits each Method section.
+const sectionExamples: Record<MethodSectionId, string> = {
+  hardRules: 'Hard rules',
+  preferences: 'Preferences',
+  promptGuidance: 'Guidance',
+  skills: 'Skills',
+  outputExpectations: 'Outputs',
+  checks: 'Method checks',
   scopeRestrictions: 'Scope restrictions',
 };
 
@@ -201,8 +225,6 @@ function BriefView({ project, busy, onProject, onError }: DetailProps) {
 
 function MethodView({ project, busy, onProject, onError }: DetailProps) {
   const [catalog, setCatalog] = useState<MethodDefinition[]>();
-  const [editing, setEditing] = useState<MethodSectionId>();
-  const [draft, setDraft] = useState('');
   const method = project.projection.method;
   const projectId = project.projection.projectId;
   useEffect(() => {
@@ -240,12 +262,8 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
       );
     }
   };
-  const save = async (sectionId: MethodSectionId) => {
+  const save = async (sectionId: MethodSectionId, value: string[]) => {
     if (!method) return;
-    const value = draft
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
     try {
       const result = await overrideMethod(
         projectId,
@@ -254,11 +272,11 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
         value,
       );
       onProject(result.project);
-      setEditing(undefined);
     } catch (error) {
       onError(
         error instanceof Error ? error.message : 'The override was not saved.',
       );
+      throw error;
     }
   };
   return (
@@ -274,82 +292,32 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
           <p className="field-state">
             When to use: {method.definition.whenToUse}
           </p>
-          <ul className="field-list">
+          <DocumentChanges project={project} document="method" />
+          <div className="doc">
             {MethodSectionIdSchema.options.map((sectionId) => {
-              const overridden = method.overrides.some(
-                (o) => o.sectionId === sectionId,
-              );
-              const lines = resolved(sectionId);
+              const override = [...method.overrides]
+                .reverse()
+                .find((o) => o.sectionId === sectionId);
+              const example = `${sectionExamples[sectionId]}: …`;
               return (
-                <li key={sectionId} className="field-row">
-                  <div className="field-head">
-                    <strong>{sectionLabels[sectionId]}</strong>
-                    <span className="field-state">
-                      {overridden ? 'customized here' : 'from catalog'}
-                    </span>
-                  </div>
-                  {editing === sectionId ? (
-                    <form
-                      className="field-edit"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void save(sectionId);
-                      }}
-                    >
-                      <textarea
-                        autoFocus
-                        rows={4}
-                        value={draft}
-                        aria-label={`${sectionLabels[sectionId]} lines`}
-                        onChange={(event) => setDraft(event.target.value)}
-                      />
-                      <div className="ask-actions">
-                        <button
-                          type="submit"
-                          className="primary-action small"
-                          disabled={busy}
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-action small"
-                          onClick={() => setEditing(undefined)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <>
-                      {lines.length ? (
-                        <ul className="field-lines">
-                          {lines.map((line) => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="field-value muted">Nothing here.</p>
-                      )}
-                      <div className="ask-actions">
-                        <button
-                          type="button"
-                          className="secondary-action small"
-                          disabled={busy}
-                          onClick={() => {
-                            setDraft(lines.join('\n'));
-                            setEditing(sectionId);
-                          }}
-                        >
-                          Customize
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </li>
+                <DocumentSection
+                  key={sectionId}
+                  id={`method-${sectionId}`}
+                  title={sectionLabels[sectionId]}
+                  hint={sectionHints[sectionId]}
+                  lines={resolved(sectionId)}
+                  meta={
+                    override
+                      ? `${override.source === 'coordinator' ? 'coordinator' : 'you'} · #${override.recordedAtSequence}`
+                      : 'from catalog'
+                  }
+                  example={example}
+                  busy={busy}
+                  onSave={(lines) => save(sectionId, lines)}
+                />
               );
             })}
-          </ul>
+          </div>
           <p className="detail-foot">
             Customizing changes future tasks only; tasks already assigned keep
             the Method they started with.
@@ -395,19 +363,68 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
   );
 }
 
-function PlanView({ project }: DetailProps) {
+function PlanView({ project, busy, onProject, onError }: DetailProps) {
+  const projectId = project.projection.projectId;
+  const doc = project.projection.planDocument;
   const plans = Object.values(project.projection.plans).sort(
     (a, b) => b.version - a.version,
   );
-  if (!plans.length) {
-    return (
-      <p className="detail-lead">
-        No plan yet. Tell the coordinator what to build and it will propose one.
-      </p>
-    );
-  }
+  const save = async (
+    sectionId: (typeof PlanSectionIdSchema.options)[number],
+    lines: string[],
+  ) => {
+    try {
+      const result = await editPlanSection(
+        projectId,
+        doc.lastSequence,
+        sectionId,
+        lines,
+      );
+      onProject(result.project);
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : 'The section was not saved.',
+      );
+      throw error;
+    }
+  };
   return (
     <div className="plan-view">
+      <p className="detail-lead">
+        What the project should become, in your words. Edit any section, or tell
+        the coordinator (“Features: offline sync”). Tasks below are the work
+        derived from it.
+      </p>
+      <DocumentChanges project={project} document="plan" />
+      <div className="doc">
+        {PlanSectionIdSchema.options.map((sectionId) => {
+          const section = doc.sections[sectionId];
+          return (
+            <DocumentSection
+              key={sectionId}
+              id={`plan-${sectionId}`}
+              title={PLAN_SECTIONS[sectionId].title}
+              hint={PLAN_SECTIONS[sectionId].hint}
+              lines={section?.lines ?? []}
+              meta={
+                section
+                  ? `${section.source === 'coordinator' ? 'coordinator' : 'you'} · #${section.updatedAtSequence}`
+                  : 'empty'
+              }
+              example={`${PLAN_SECTIONS[sectionId].title}: …`}
+              busy={busy}
+              onSave={(lines) => save(sectionId, lines)}
+            />
+          );
+        })}
+      </div>
+      <h3 className="doc-tasks-title">Tasks</h3>
+      {!plans.length ? (
+        <p className="field-value muted">
+          No tasks yet. Tell the coordinator what to build and it will propose
+          them.
+        </p>
+      ) : null}
       {plans.map((plan) => {
         const status = plan.supersededByPlanId
           ? 'superseded'
@@ -417,7 +434,7 @@ function PlanView({ project }: DetailProps) {
         return (
           <section key={plan.id} className={`plan-block plan-${status}`}>
             <div className="field-head">
-              <strong>Plan v{plan.version}</strong>
+              <strong>Tasks v{plan.version}</strong>
               <span className="field-state">{status}</span>
             </div>
             <p className="field-value">{plan.request}</p>
@@ -457,6 +474,89 @@ function PlanView({ project }: DetailProps) {
         );
       })}
     </div>
+  );
+}
+
+// The last few edits to a document, with what each one added and removed.
+function DocumentChanges({
+  project,
+  document,
+}: {
+  project: ProjectResponse;
+  document: 'plan' | 'method';
+}) {
+  const [changes, setChanges] = useState<DocumentChange[]>();
+  const [open, setOpen] = useState<number>();
+  const projectId = project.projection.projectId;
+  const lastSequence = project.projection.lastSequence;
+  useEffect(() => {
+    let active = true;
+    void readEvents(projectId)
+      .then((page) => {
+        if (!active) return;
+        const planTitles = Object.fromEntries(
+          PlanSectionIdSchema.options.map((id) => [
+            id,
+            PLAN_SECTIONS[id].title,
+          ]),
+        );
+        setChanges(
+          documentChanges(page.events, {
+            plan: planTitles,
+            method: sectionLabels,
+          }).filter((change) => change.document === document),
+        );
+      })
+      .catch(() => {
+        if (active) setChanges([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, lastSequence, document]);
+  if (!changes?.length) return null;
+  return (
+    <ol className="doc-changes" aria-label="Recent changes">
+      {changes.slice(0, 5).map((change) => (
+        <li key={change.sequence}>
+          <button
+            type="button"
+            className="doc-change"
+            aria-expanded={open === change.sequence}
+            onClick={() =>
+              setOpen(open === change.sequence ? undefined : change.sequence)
+            }
+          >
+            <span className="doc-change-section">{change.section}</span>
+            <span className="doc-change-who">
+              {change.source === 'coordinator' ? 'coordinator' : 'you'}
+            </span>
+            <span className="doc-change-delta">
+              {change.added.length ? `+${change.added.length}` : ''}
+              {change.added.length && change.removed.length ? ' ' : ''}
+              {change.removed.length ? `−${change.removed.length}` : ''}
+              {!change.added.length && !change.removed.length
+                ? 'reordered'
+                : ''}
+            </span>
+          </button>
+          {open === change.sequence ? (
+            <ul className="doc-change-lines">
+              {change.added.map((line) => (
+                <li key={`+${line}`} className="added">
+                  {line}
+                </li>
+              ))}
+              {change.removed.map((line) => (
+                <li key={`-${line}`} className="removed">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -563,7 +663,7 @@ export function ProjectDetail({
   const titles: Record<DetailItem, string> = {
     brief: 'Brief',
     method: 'Method',
-    plan: 'Plans',
+    plan: 'Plan',
     agents: 'Agents',
     history: 'History',
   };
