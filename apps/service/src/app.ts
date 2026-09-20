@@ -75,7 +75,9 @@ export function createService(config: AppConfig) {
   eventStore.rebuildAllProjections();
   const projectStore = new SqliteProjectStore(store.database);
   projectStore.rebuildAllProjections();
-  const projects = new ProjectService(projectStore);
+  const projects = new ProjectService(projectStore, {
+    folders: config.folderRoot ? { root: config.folderRoot } : {},
+  });
   if (config.demoProject) projects.ensureDemoProject();
   const foundationRecord: FoundationRecord = {
     id: FOUNDATION_RECORD_ID,

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ProjectListResponse, ProjectResponse } from '@harness/contracts';
-import { listProjects, readProject } from './api';
+import { attachRepository, listProjects, readProject } from './api';
+import { FolderPicker } from './folder-picker';
 import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
 import { LivePane } from './live-pane';
 import {
@@ -51,6 +52,27 @@ export function Workspace({
     () => typeof window === 'undefined' || window.innerWidth > 960,
   );
   const [detail, setDetail] = useState<DetailItem>();
+  const [picking, setPicking] = useState(false);
+  const repository = project.projection.project.repository;
+
+  const attach = async (path: string) => {
+    setPicking(false);
+    try {
+      const result = await attachRepository(
+        project.projection.projectId,
+        project.projection.lastSequence,
+        path,
+      );
+      updateProject(result.project);
+      onNotice(
+        `Attached ${result.project.projection.project.repository?.name ?? 'folder'}.`,
+      );
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : 'The folder was not attached.',
+      );
+    }
+  };
 
   const targets = liveTargets(project);
   const openTargets = open
@@ -165,6 +187,46 @@ export function Workspace({
           <button type="button" className="ws-back" onClick={onHome}>
             ← Projects
           </button>
+          <div className="ws-repo">
+            {repository ? (
+              <>
+                <span className="folder-mark is-repo" aria-hidden="true">
+                  ⎇
+                </span>
+                <span className="ws-repo-name" title={repository.path}>
+                  {repository.name}
+                  {repository.branch ? (
+                    <small> · {repository.branch}</small>
+                  ) : null}
+                </span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => setPicking(true)}
+                >
+                  change
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="ws-repo-name muted">No folder attached</span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => setPicking(true)}
+                >
+                  attach
+                </button>
+              </>
+            )}
+          </div>
+          {picking ? (
+            <FolderPicker
+              initialPath={repository?.path}
+              onPick={(path) => void attach(path)}
+              onCancel={() => setPicking(false)}
+            />
+          ) : null}
           <h2 className="ws-side-title">Conversations</h2>
           <ul className="ws-list">
             {targets.map((target) => {

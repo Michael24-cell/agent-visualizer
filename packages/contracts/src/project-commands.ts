@@ -29,6 +29,27 @@ const CommandBaseShape = {
 export const CreateProjectCommandSchema = z.strictObject({
   commandId: CommandIdSchema,
   name: z.string().trim().min(1).max(120),
+  // Absolute folder path to attach at creation.
+  repositoryPath: z.string().trim().min(1).optional(),
+});
+
+// Targets the project; expectedSequence is the project's lastSequence.
+export const AttachRepositoryCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  path: z.string().trim().min(1),
+});
+
+// The service's own view of folders it may attach, for the folder picker.
+export const FolderEntrySchema = z.strictObject({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  isRepository: z.boolean(),
+});
+
+export const FolderListingSchema = z.strictObject({
+  path: z.string().min(1),
+  parent: z.string().min(1).optional(),
+  entries: z.array(FolderEntrySchema),
 });
 
 // Targets the project; expectedSequence is the project's lastSequence.
@@ -98,6 +119,8 @@ export const CommandErrorCodeSchema = z.enum([
   'ask_not_open',
   'plan_superseded',
   'invalid_transition',
+  'folder_not_found',
+  'folder_not_allowed',
 ]);
 
 export const CommandErrorSchema = z.strictObject({
@@ -174,6 +197,10 @@ export const BriefRequestRefSchema = z.strictObject({
 
 export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
+export type AttachRepositoryCommand = z.infer<
+  typeof AttachRepositoryCommandSchema
+>;
+export type FolderListing = z.infer<typeof FolderListingSchema>;
 export type PostMessageCommand = z.infer<typeof PostMessageCommandSchema>;
 export type AgentCommand = z.infer<typeof AgentCommandSchema>;
 export type AskDecisionCommand = z.infer<typeof AskDecisionCommandSchema>;

@@ -1,5 +1,6 @@
 import {
   CommandResponseSchema,
+  FolderListingSchema,
   MessagesPageSchema,
   MethodDefinitionSchema,
   ProjectEventsPageSchema,
@@ -7,6 +8,7 @@ import {
   ProjectResponseSchema,
   type BriefFieldId,
   type CommandResponse,
+  type FolderListing,
   type MessagesPage,
   type MethodDefinition,
   type MethodSectionId,
@@ -60,12 +62,45 @@ export async function readProject(projectId: string): Promise<ProjectResponse> {
   );
 }
 
-export async function createProject(name: string): Promise<CommandResponse> {
+export async function createProject(
+  name: string,
+  repositoryPath?: string,
+): Promise<CommandResponse> {
   return CommandResponseSchema.parse(
     await (
       await request('/api/projects', {
         method: 'POST',
-        body: JSON.stringify({ commandId: crypto.randomUUID(), name }),
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          name,
+          ...(repositoryPath ? { repositoryPath } : {}),
+        }),
+      })
+    ).json(),
+  );
+}
+
+export async function listFolders(path?: string): Promise<FolderListing> {
+  const suffix = path ? `?path=${encodeURIComponent(path)}` : '';
+  return FolderListingSchema.parse(
+    await (await request(`/api/folders${suffix}`)).json(),
+  );
+}
+
+export async function attachRepository(
+  projectId: string,
+  expectedSequence: number,
+  path: string,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/repository`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          path,
+        }),
       })
     ).json(),
   );

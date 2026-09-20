@@ -36,6 +36,7 @@ import {
   ProjectSchema,
   ProposalSchema,
   ProposalStateSchema,
+  RepositoryRefSchema,
   ThreadSchema,
 } from './project.js';
 
@@ -80,6 +81,10 @@ const reason = z.string().min(1);
 
 export const ProjectEventSchema = z.discriminatedUnion('type', [
   projectEvent('project.created', z.strictObject({ project: ProjectSchema })),
+  projectEvent(
+    'project.repository_attached',
+    z.strictObject({ repository: RepositoryRefSchema }),
+  ),
 
   projectEvent('thread.opened', z.strictObject({ thread: ThreadSchema })),
   projectEvent(

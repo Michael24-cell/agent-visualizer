@@ -10,6 +10,8 @@ const EnvironmentSchema = z.object({
   HARNESS_SESSION_TOKEN: z.string().min(32).optional(),
   // '1' seeds the demo project on startup. Off by default.
   HARNESS_DEMO_PROJECT: z.enum(['0', '1']).default('0'),
+  // Folders that projects may attach must live under this path (default: home).
+  HARNESS_FOLDER_ROOT: z.string().min(1).optional(),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -22,6 +24,7 @@ export interface AppConfig {
   readonly sessionToken: string;
   readonly allowedOrigins: readonly string[];
   readonly demoProject: boolean;
+  readonly folderRoot?: string | undefined;
 }
 
 function defaultDataDirectory(
@@ -72,5 +75,8 @@ export function loadAppConfig(
       `http://127.0.0.1:${environment.HARNESS_PORT}`,
     ],
     demoProject: environment.HARNESS_DEMO_PROJECT === '1',
+    ...(environment.HARNESS_FOLDER_ROOT
+      ? { folderRoot: environment.HARNESS_FOLDER_ROOT }
+      : {}),
   };
 }

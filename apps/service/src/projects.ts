@@ -19,6 +19,7 @@ import {
   type AgentTask,
   type ApplyMethodCommand,
   type AskDecisionCommand,
+  type AttachRepositoryCommand,
   type BriefFieldCommand,
   type CommandErrorCode,
   type CommandReceipt,
@@ -67,6 +68,7 @@ import {
 } from '@harness/runtime-simulated';
 import type { z } from 'zod';
 import { renderBrief } from './brief.js';
+import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
 
 export class ProjectCommandError extends Error {
   constructor(
@@ -81,7 +83,10 @@ export class ProjectCommandError extends Error {
 export function commandErrorStatus(code: CommandErrorCode): number {
   switch (code) {
     case 'not_found':
+    case 'folder_not_found':
       return 404;
+    case 'folder_not_allowed':
+      return 403;
     case 'stale_sequence':
     case 'already_decided':
     case 'agent_busy':
@@ -248,16 +253,20 @@ const coordinatorAuthor: MessageAuthor = {
 export interface ProjectServiceOptions {
   // Injectable clock so tests can pin timestamps.
   readonly now?: () => string;
+  // Where attachable folders live (defaults to the home directory).
+  readonly folders?: FolderOptions;
 }
 
 export class ProjectService {
   private readonly now: () => string;
+  readonly folders: FolderOptions;
 
   constructor(
     private readonly store: SqliteProjectStore,
     options: ProjectServiceOptions = {},
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
+    this.folders = options.folders ?? {};
   }
 
   // --- Reads ---------------------------------------------------------------
@@ -364,12 +373,64 @@ export class ProjectService {
     return this.run(command.commandId, undefined, () => {
       const suffix = safe(command.commandId);
       const projectId = ProjectIdSchema.parse(`project_${suffix}`);
+      // Validate the folder before anything is written.
+      const repository = command.repositoryPath
+        ? this.inspect(command.repositoryPath)
+        : undefined;
       return this.materializeProject(
         projectId,
         command.commandId,
         command.name,
         'user',
+        repository,
       );
+    });
+  }
+
+  private inspect(path: string) {
+    try {
+      return inspectFolder(path, this.folders, this.now());
+    } catch (error) {
+      if (error instanceof FolderError) {
+        throw new ProjectCommandError(error.code, error.message);
+      }
+      throw error;
+    }
+  }
+
+  attachRepository(
+    projectId: ProjectId,
+    command: AttachRepositoryCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      this.assertSequence(
+        'Project',
+        projection.lastSequence,
+        command.expectedSequence,
+      );
+      const repository = this.inspect(command.path);
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        'project.repository_attached',
+        { repository },
+        { source: 'user' },
+      );
+      const coordinator = Object.values(batch.current.threads).find(
+        (thread) => thread.kind === 'coordinator',
+      )!;
+      batch.post(
+        coordinator,
+        coordinatorAuthor,
+        `Attached ${repository.name}${repository.branch ? ` (${repository.branch})` : ''}. Agents in this build still simulate their work; a live agent would work in this folder.`,
+      );
+      return batch.commit();
     });
   }
 
@@ -379,12 +440,21 @@ export class ProjectService {
     commandId: string,
     name: string,
     origin: 'user' | 'demo',
+    repository?: ReturnType<typeof inspectFolder>,
   ) {
     const now = this.now();
     const batch = new ProjectBatch(this.store, projectId, commandId, now);
     batch.emit(
       'project.created',
-      { project: { id: projectId, name, origin, createdAt: now } },
+      {
+        project: {
+          id: projectId,
+          name,
+          origin,
+          createdAt: now,
+          ...(repository ? { repository } : {}),
+        },
+      },
       { source: 'user' },
     );
     batch.created('projects', projectId);

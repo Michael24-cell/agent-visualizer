@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { ProjectListResponse } from '@harness/contracts';
 import { createProject, postMessage } from './api';
+import { FolderPicker } from './folder-picker';
 import { nameFromRequest, statusNotes } from './project-notes';
 
 // The start screen. One thing to do: say what you're building. That
@@ -19,13 +20,15 @@ export function Home({
 }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  const [folder, setFolder] = useState<string>();
+  const [picking, setPicking] = useState(false);
 
   const start = async () => {
     const body = value.trim();
     if (!body || busy) return;
     setBusy(true);
     try {
-      const created = await createProject(nameFromRequest(body));
+      const created = await createProject(nameFromRequest(body), folder);
       const projectId = created.project.projection.projectId;
       const coordinator = Object.values(
         created.project.projection.threads,
@@ -115,9 +118,55 @@ export function Home({
             Start <kbd>⏎</kbd>
           </button>
         </form>
+        <div className="home-folder">
+          {folder ? (
+            <>
+              <span className="folder-mark is-repo" aria-hidden="true">
+                ⎇
+              </span>
+              <code title={folder}>{folder.split('/').pop()}</code>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setPicking(true)}
+              >
+                change
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setFolder(undefined)}
+              >
+                remove
+              </button>
+            </>
+          ) : (
+            <>
+              <span>No folder attached</span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setPicking(true)}
+              >
+                choose a folder
+              </button>
+            </>
+          )}
+        </div>
+        {picking ? (
+          <FolderPicker
+            initialPath={folder}
+            onPick={(path) => {
+              setFolder(path);
+              setPicking(false);
+            }}
+            onCancel={() => setPicking(false)}
+          />
+        ) : null}
         <p className="home-hint">
           Enter starts a project: a coordinator that plans with you, and agent
-          panes you can type into directly. Simulated agents in this build.
+          panes you can type into directly. Attach a folder so agents know where
+          the code lives. Simulated agents in this build.
         </p>
       </main>
     </div>

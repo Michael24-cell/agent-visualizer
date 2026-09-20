@@ -357,6 +357,13 @@ export function applyProjectEvent(
     case 'project.created':
       throw new ProjectionError('duplicate_entity', 'Project already exists.');
 
+    case 'project.repository_attached': {
+      // Re-attaching is allowed (the user moved or renamed the folder); the
+      // event history keeps every attachment.
+      next.project = { ...next.project, repository: event.payload.repository };
+      break;
+    }
+
     case 'thread.opened': {
       const thread = event.payload.thread;
       assertProject(next, thread.projectId);

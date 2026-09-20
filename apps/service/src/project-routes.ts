@@ -4,6 +4,8 @@ import {
   AgentCommandSchema,
   AgentIdSchema,
   ApplyMethodCommandSchema,
+  AttachRepositoryCommandSchema,
+  FolderListingSchema,
   BriefFieldCommandSchema,
   BriefFieldIdSchema,
   MethodDefinitionSchema,
@@ -25,6 +27,7 @@ import {
   ProposalIdSchema,
 } from '@harness/contracts';
 import { METHOD_CATALOG } from '@harness/runtime-simulated';
+import { FolderError, listFolders } from './folders.js';
 import {
   ProjectCommandError,
   commandErrorStatus,
@@ -171,6 +174,44 @@ export function registerProjectRoutes(
       return reply
         .code(result.value.receipt.replayed ? 200 : 201)
         .send(CommandResponseSchema.parse(result.value));
+    },
+  );
+
+  service.get('/api/folders', async (request, reply) => {
+    const query = z
+      .strictObject({ path: z.string().min(1).optional() })
+      .safeParse(request.query);
+    if (!query.success) return reply.code(400).send(invalid('folder path'));
+    try {
+      return FolderListingSchema.parse(
+        listFolders(query.data.path, projects.folders),
+      );
+    } catch (error) {
+      if (error instanceof FolderError) {
+        return reply.code(error.code === 'folder_not_found' ? 404 : 403).send(
+          CommandErrorSchema.parse({
+            error: error.message,
+            code: error.code,
+          }),
+        );
+      }
+      throw error;
+    }
+  });
+
+  service.post(
+    '/api/projects/:projectId/repository',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      const command = AttachRepositoryCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('repository command'));
+      }
+      const result = handle(() =>
+        projects.attachRepository(params.data.projectId, command.data),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return CommandResponseSchema.parse(result.value);
     },
   );
 

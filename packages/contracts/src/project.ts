@@ -26,11 +26,21 @@ const SequenceSchema = z.number().int().positive();
 
 export const ProjectOriginSchema = z.enum(['user', 'demo']);
 
+// A folder on this machine the project's agents work in. Attached after
+// the fact or at creation; absent for projects that are only a conversation.
+export const RepositoryRefSchema = z.strictObject({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  branch: z.string().min(1).optional(),
+  attachedAt: z.iso.datetime(),
+});
+
 export const ProjectSchema = z.strictObject({
   id: ProjectIdSchema,
   name: z.string().min(1).max(120),
   origin: ProjectOriginSchema,
   createdAt: z.iso.datetime(),
+  repository: RepositoryRefSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -477,6 +487,7 @@ export const ProposalSchema = z.discriminatedUnion('kind', [
 ]);
 
 export type Project = z.infer<typeof ProjectSchema>;
+export type RepositoryRef = z.infer<typeof RepositoryRefSchema>;
 export type ProjectOrigin = z.infer<typeof ProjectOriginSchema>;
 export type Brief = z.infer<typeof BriefSchema>;
 export type BriefField = z.infer<typeof BriefFieldSchema>;
