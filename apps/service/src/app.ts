@@ -77,6 +77,10 @@ export function createService(config: AppConfig) {
   projectStore.rebuildAllProjections();
   const projects = new ProjectService(projectStore, {
     folders: config.folderRoot ? { root: config.folderRoot } : {},
+    replies:
+      config.replyDelayMs === undefined
+        ? { mode: 'inline' }
+        : { mode: 'deferred', delayMs: config.replyDelayMs },
   });
   if (config.demoProject) projects.ensureDemoProject();
   const foundationRecord: FoundationRecord = {
@@ -329,6 +333,7 @@ export function createService(config: AppConfig) {
   registerProjectRoutes(service, projects);
 
   service.addHook('onClose', async () => {
+    await projects.whenIdle();
     store.close();
   });
 

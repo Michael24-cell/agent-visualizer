@@ -32,11 +32,13 @@ import {
 // the service: messages are read by cursor, replies arrive in the command
 // response, and the agent's state is the projection's, not the client's.
 
+// Who a reply is from, when it is not the pane's own voice: another agent
+// or the coordinator speaking in an agent pane, or the service itself.
 function authorLabel(message: Message, target: LiveTarget): string | undefined {
-  if (message.author.role === 'user') return 'You';
+  if (message.author.role === 'user') return undefined;
   if (message.author.role === 'coordinator' && target.kind === 'agent')
     return 'Coordinator';
-  if (message.author.role === 'system') return 'System';
+  if (message.author.role === 'system') return 'Harness';
   return undefined;
 }
 
@@ -243,21 +245,51 @@ export function LivePane({
     };
   }, [projectId, threadRef]);
 
+  const threadBusy = project.busyThreadIds.includes(target.thread.id);
+
   useEffect(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, threadBusy]);
+
+  // Latest sequence we hold, readable from the poll without re-subscribing.
+  const newestRef = useRef(0);
+  useEffect(() => {
+    newestRef.current = messages.at(-1)?.sequence ?? 0;
+  }, [messages]);
 
   const appendNewer = async () => {
-    const after = messages.at(-1)?.sequence ?? 0;
     const page = await readMessages(projectId, threadRef, {
-      after,
+      after: newestRef.current,
       limit: 100,
     });
     if (page.messages.length) {
       setMessages((current) => [...current, ...page.messages]);
     }
+    return page.messages.length;
   };
+
+  // While the service is producing a reply for this thread, poll for it.
+  // Stops on its own when the project says the thread is no longer busy.
+  useEffect(() => {
+    if (!threadBusy) return;
+    let active = true;
+    const tick = async () => {
+      try {
+        await appendNewer();
+        const next = await readProject(projectId);
+        if (active) onProject(next);
+      } catch {
+        // Keep polling; a transient failure is not the user's problem.
+      }
+    };
+    const timer = setInterval(() => void tick(), 600);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadBusy, projectId, threadRef]);
 
   const loadOlder = async () => {
     if (olderCursor === undefined) return;
@@ -491,20 +523,26 @@ export function LivePane({
               // The ask itself is rendered as a card below, not as prose.
               return null;
             }
+            const mine = message.author.role === 'user';
             return (
               <li
                 key={message.id}
-                className={`line tone-${
-                  message.author.role === 'user' ? 'user' : 'neutral'
-                }`}
+                className={`msg ${mine ? 'msg-user' : 'msg-reply'} role-${message.author.role}`}
               >
-                <p>
-                  {label ? <span className="line-you">{label}</span> : null}
-                  {message.body}
-                </p>
+                {label ? <span className="msg-from">{label}</span> : null}
+                <p>{message.body}</p>
               </li>
             );
           })}
+          {threadBusy ? (
+            <li className="msg msg-reply msg-typing" aria-live="polite">
+              <span className="typing" aria-label={`${title} is replying`}>
+                <i />
+                <i />
+                <i />
+              </span>
+            </li>
+          ) : null}
           {openAsk ? (
             <AskCard ask={openAsk} busy={busy} onDecide={decideOpenAsk} />
           ) : null}

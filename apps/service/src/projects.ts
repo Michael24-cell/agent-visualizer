@@ -66,6 +66,7 @@ import {
   revisePlan,
   type AgentStepIntent,
 } from '@harness/runtime-simulated';
+import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import { renderBrief } from './brief.js';
 import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
@@ -250,16 +251,27 @@ const coordinatorAuthor: MessageAuthor = {
   adapter: SIMULATED_CONVERSATION_ADAPTER,
 };
 
+const systemAuthor: MessageAuthor = { role: 'system', source: 'service' };
+
 export interface ProjectServiceOptions {
   // Injectable clock so tests can pin timestamps.
   readonly now?: () => string;
   // Where attachable folders live (defaults to the home directory).
   readonly folders?: FolderOptions;
+  // Replies land in the same transaction as the user's message (inline) or
+  // after a delay in their own transaction (deferred), the way a live agent
+  // would answer. Tests default to inline; the app runs deferred.
+  readonly replies?:
+    | { readonly mode: 'inline' }
+    | { readonly mode: 'deferred'; readonly delayMs: number };
 }
 
 export class ProjectService {
   private readonly now: () => string;
   readonly folders: FolderOptions;
+  private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
+  // Threads with a reply in flight, and the promise that finishes it.
+  private readonly pending = new Map<string, Promise<void>>();
 
   constructor(
     private readonly store: SqliteProjectStore,
@@ -267,6 +279,21 @@ export class ProjectService {
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.folders = options.folders ?? {};
+    this.replies = options.replies ?? { mode: 'inline' };
+  }
+
+  // Resolves once every in-flight reply for the project has landed.
+  async whenIdle(projectId?: ProjectId): Promise<void> {
+    const keys = [...this.pending.keys()].filter(
+      (key) => !projectId || key.startsWith(`${projectId}:`),
+    );
+    await Promise.all(keys.map((key) => this.pending.get(key)));
+  }
+
+  busyThreadIds(projectId: ProjectId): string[] {
+    return [...this.pending.keys()]
+      .filter((key) => key.startsWith(`${projectId}:`))
+      .map((key) => key.slice(projectId.length + 1));
   }
 
   // --- Reads ---------------------------------------------------------------
@@ -284,6 +311,9 @@ export class ProjectService {
       projection,
       summary: summarizeProject(projection),
       brief: renderBrief(projection.project, projection.brief),
+      busyThreadIds: this.busyThreadIds(
+        projection.projectId,
+      ) as ProjectResponse['busyThreadIds'],
     };
   }
 
@@ -578,77 +608,159 @@ export class ProjectService {
         this.now(),
         projection,
       );
-      batch.post(thread, userAuthor, command.body, command.intent);
-
-      if (thread.kind === 'agent' && thread.agentId) {
-        const agent = batch.current.agents[thread.agentId]!;
-        const currentTask = agent.currentTaskId
-          ? batch.current.tasks[agent.currentTaskId]
-          : undefined;
-        const intents = planAgentIntents({
-          agent,
-          currentTask,
-          intent: command.intent,
-          body: command.body,
-        });
-        for (const intent of intents) {
-          if (intent.kind === 'assign_task') {
-            const taskId = TaskIdSchema.parse(
-              `task_${safe(command.commandId)}`,
-            );
-            batch.emit(
-              'task.assigned',
-              {
-                task: {
-                  id: taskId,
-                  projectId,
-                  agentId: agent.id,
-                  title: intent.title,
-                  objective: intent.objective,
-                  category: agent.category,
-                  skills: [],
-                  scope: [],
-                  scopeHistory: [],
-                  dependsOn: [],
-                  inputsSatisfied: [],
-                  expectedOutputs: [],
-                  requiredChecks: [
-                    agent.category === 'orchestration'
-                      ? 'experience-check'
-                      : 'contract-check',
-                  ],
-                  state: 'working',
-                  originMessageId: batch.createdIds.messages?.[0],
-                  createdAtSequence: batch.nextSequence(),
-                },
-              },
-              { agentId: agent.id, taskId, source: 'agent' },
-            );
-            batch.created('tasks', taskId);
-            this.pinMethod(batch, taskId, safe(command.commandId));
-          } else {
-            const latestTask = batch.current.agents[agent.id]?.currentTaskId;
-            batch.post(
-              thread,
-              agentAuthor(agent),
-              intent.body,
-              'chat',
-              latestTask ? { taskId: latestTask } : undefined,
-            );
-          }
-        }
-      } else if (thread.kind === 'coordinator') {
-        this.handleCoordinatorMessage(
-          batch,
-          projectId,
-          thread,
-          command.commandId,
-          command.body,
-          batch.createdIds.messages?.[0],
-        );
+      const messageId = batch.post(
+        thread,
+        userAuthor,
+        command.body,
+        command.intent,
+      );
+      if (this.replies.mode === 'inline') {
+        this.buildReply(batch, projectId, thread, command, messageId);
+        return batch.commit();
       }
-      return batch.commit();
+      const committed = batch.commit();
+      this.scheduleReply(projectId, thread, command, messageId);
+      return committed;
     });
+  }
+
+  // A deferred reply: its own transaction, its own command id, after the
+  // configured delay. Failures (the thread changed underneath it) are
+  // logged in the thread as a system message rather than lost.
+  private scheduleReply(
+    projectId: ProjectId,
+    thread: Thread,
+    command: PostMessageCommand,
+    messageId: string,
+  ) {
+    if (this.replies.mode !== 'deferred') return;
+    const key = `${projectId}:${thread.id}`;
+    const delay = this.replies.delayMs;
+    const previous = this.pending.get(key) ?? Promise.resolve();
+    const work = previous.then(
+      () =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            try {
+              const projection = this.requireProjection(projectId);
+              const current = projection.threads[thread.id]!;
+              const batch = new ProjectBatch(
+                this.store,
+                projectId,
+                randomUUID(),
+                this.now(),
+                projection,
+              );
+              this.buildReply(batch, projectId, current, command, messageId);
+              batch.commit();
+            } catch (error) {
+              this.postFailure(projectId, thread, error);
+            } finally {
+              if (this.pending.get(key) === work) this.pending.delete(key);
+              resolve();
+            }
+          }, delay);
+        }),
+    );
+    this.pending.set(key, work);
+  }
+
+  private postFailure(projectId: ProjectId, thread: Thread, error: unknown) {
+    try {
+      const projection = this.requireProjection(projectId);
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        randomUUID(),
+        this.now(),
+        projection,
+      );
+      batch.post(
+        projection.threads[thread.id]!,
+        systemAuthor,
+        `That reply could not be produced: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      batch.commit();
+    } catch {
+      // Nothing more to do; the user's message is already persisted.
+    }
+  }
+
+  // The simulated agent's or coordinator's answer to one user message.
+  private buildReply(
+    batch: ProjectBatch,
+    projectId: ProjectId,
+    thread: Thread,
+    command: PostMessageCommand,
+    messageId: string | undefined,
+  ) {
+    if (thread.kind === 'agent' && thread.agentId) {
+      const agent = batch.current.agents[thread.agentId]!;
+      const currentTask = agent.currentTaskId
+        ? batch.current.tasks[agent.currentTaskId]
+        : undefined;
+      const intents = planAgentIntents({
+        agent,
+        currentTask,
+        intent: command.intent,
+        body: command.body,
+      });
+      for (const intent of intents) {
+        if (intent.kind === 'assign_task') {
+          const taskId = TaskIdSchema.parse(`task_${safe(command.commandId)}`);
+          batch.emit(
+            'task.assigned',
+            {
+              task: {
+                id: taskId,
+                projectId,
+                agentId: agent.id,
+                title: intent.title,
+                objective: intent.objective,
+                category: agent.category,
+                skills: [],
+                scope: [],
+                scopeHistory: [],
+                dependsOn: [],
+                inputsSatisfied: [],
+                expectedOutputs: [],
+                requiredChecks: [
+                  agent.category === 'orchestration'
+                    ? 'experience-check'
+                    : 'contract-check',
+                ],
+                state: 'working',
+                ...(messageId ? { originMessageId: messageId } : {}),
+                createdAtSequence: batch.nextSequence(),
+              },
+            },
+            { agentId: agent.id, taskId, source: 'agent' },
+          );
+          batch.created('tasks', taskId);
+          this.pinMethod(batch, taskId, safe(command.commandId));
+        } else {
+          const latestTask = batch.current.agents[agent.id]?.currentTaskId;
+          batch.post(
+            thread,
+            agentAuthor(agent),
+            intent.body,
+            'chat',
+            latestTask ? { taskId: latestTask } : undefined,
+          );
+        }
+      }
+    } else if (thread.kind === 'coordinator') {
+      this.handleCoordinatorMessage(
+        batch,
+        projectId,
+        thread,
+        command.commandId,
+        command.body,
+        messageId,
+      );
+    }
   }
 
   // --- Planning and dispersal ---------------------------------------------

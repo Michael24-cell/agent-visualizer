@@ -5,6 +5,7 @@ import {
   BriefRequestIdSchema,
   CommandIdSchema,
   MethodIdSchema,
+  ThreadIdSchema,
 } from './project-ids.js';
 import {
   ProjectProjectionSchema,
@@ -146,6 +147,9 @@ export const ProjectResponseSchema = z.strictObject({
     markdown: z.string(),
     digest: z.string().min(1),
   }),
+  // Threads whose reply is still being produced. Runtime state, not part
+  // of the event stream: it is empty again after a restart.
+  busyThreadIds: z.array(ThreadIdSchema).default([]),
 });
 
 export const CommandResponseSchema = z.strictObject({

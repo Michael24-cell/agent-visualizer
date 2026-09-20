@@ -12,6 +12,13 @@ const EnvironmentSchema = z.object({
   HARNESS_DEMO_PROJECT: z.enum(['0', '1']).default('0'),
   // Folders that projects may attach must live under this path (default: home).
   HARNESS_FOLDER_ROOT: z.string().min(1).optional(),
+  // How long simulated replies take to arrive, so panes show work in progress.
+  HARNESS_REPLY_DELAY_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(30_000)
+    .default(900),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -25,6 +32,7 @@ export interface AppConfig {
   readonly allowedOrigins: readonly string[];
   readonly demoProject: boolean;
   readonly folderRoot?: string | undefined;
+  readonly replyDelayMs?: number | undefined;
 }
 
 function defaultDataDirectory(
@@ -78,5 +86,6 @@ export function loadAppConfig(
     ...(environment.HARNESS_FOLDER_ROOT
       ? { folderRoot: environment.HARNESS_FOLDER_ROOT }
       : {}),
+    replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
   };
 }
