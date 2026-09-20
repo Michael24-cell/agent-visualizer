@@ -110,6 +110,7 @@ function project(work: 'idle' | 'working' = 'idle'): ProjectResponse {
         },
       },
       tasks: task,
+      planDocument: { sections: {}, lastSequence: 1 },
       plans: {},
       proposals: {},
       asks: {},

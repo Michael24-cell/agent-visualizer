@@ -68,6 +68,7 @@ function project(
       },
       agents: {},
       tasks: {},
+      planDocument: { sections: {}, lastSequence: 1 },
       plans: {},
       proposals: {},
       asks: {},

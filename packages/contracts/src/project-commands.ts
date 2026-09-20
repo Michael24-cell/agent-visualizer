@@ -17,6 +17,7 @@ import {
   MessageBodySchema,
   MessageSchema,
   MethodSectionIdSchema,
+  PlanSectionIdSchema,
   ProjectSchema,
 } from './project.js';
 
@@ -109,6 +110,13 @@ export const MethodOverrideCommandSchema = z.strictObject({
   ...CommandBaseShape,
   sectionId: MethodSectionIdSchema,
   value: z.array(z.string().trim().min(1)),
+});
+
+// Targets the plan document; expectedSequence is planDocument.lastSequence.
+export const PlanSectionCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  sectionId: PlanSectionIdSchema,
+  lines: z.array(z.string().trim().min(1).max(500)),
 });
 
 // Targets the brief; expectedSequence is brief.lastSequence.
@@ -219,6 +227,7 @@ export const BriefRequestRefSchema = z.strictObject({
 export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
+export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type AttachRepositoryCommand = z.infer<
   typeof AttachRepositoryCommandSchema

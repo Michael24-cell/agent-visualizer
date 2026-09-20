@@ -34,6 +34,7 @@ import {
   type MethodOverrideCommand,
   type Plan,
   type PlanTask,
+  type PlanSectionCommand,
   type PostMessageCommand,
   type ProjectEvent,
   type ProjectId,
@@ -56,7 +57,9 @@ import {
 import type { SqliteProjectStore } from '@harness/persistence';
 import {
   SIMULATED_CONVERSATION_ADAPTER,
+  applyDocumentEdit,
   classifyCoordinatorMessage,
+  parseDocumentEdit,
   coordinatorGreeting,
   findMethod,
   nextAgentStep,
@@ -1101,6 +1104,60 @@ export class ProjectService {
     this.pinMethod(batch, taskId, safe(command.commandId));
   }
 
+  // A conversational edit to the Plan or Method document, applied at once
+  // and answered with what changed. The edit is the same event a direct
+  // edit records, with the coordinator as its source.
+  private applyDocumentEdit(
+    batch: ProjectBatch,
+    thread: Thread,
+    edit: ReturnType<typeof parseDocumentEdit> & object,
+    messageId: string | undefined,
+  ) {
+    const projection = batch.current;
+    if (edit.document === 'plan') {
+      const current =
+        projection.planDocument.sections[edit.sectionId]?.lines ?? [];
+      const result = applyDocumentEdit(current, edit);
+      if (result.changed) {
+        batch.emit(
+          'plan.section_edited',
+          {
+            sectionId: edit.sectionId,
+            lines: result.lines,
+            source: 'coordinator',
+            ...(messageId ? { messageId } : {}),
+          },
+          { source: 'coordinator' },
+        );
+      }
+      batch.post(thread, coordinatorAuthor, result.reply);
+      return;
+    }
+    if (!projection.method) {
+      batch.post(
+        thread,
+        coordinatorAuthor,
+        'No Method is applied yet. Apply one from the Method panel and I will edit it from here.',
+      );
+      return;
+    }
+    const current = resolveMethod(projection.method)[edit.sectionId];
+    const result = applyDocumentEdit(current, edit);
+    if (result.changed) {
+      batch.emit(
+        'method.override_recorded',
+        {
+          sectionId: edit.sectionId,
+          value: result.lines,
+          source: 'coordinator',
+          ...(messageId ? { messageId } : {}),
+        },
+        { source: 'coordinator' },
+      );
+    }
+    batch.post(thread, coordinatorAuthor, result.reply);
+  }
+
   // --- Planning and dispersal ---------------------------------------------
 
   private openPlanProposal(projection: ProjectProjection) {
@@ -1125,6 +1182,11 @@ export class ProjectService {
     messageId: string | undefined,
   ) {
     const projection = batch.current;
+    const documentEdit = parseDocumentEdit(body);
+    if (documentEdit) {
+      this.applyDocumentEdit(batch, thread, documentEdit, messageId);
+      return;
+    }
     const open = this.openPlanProposal(projection);
     const classified = classifyCoordinatorMessage(body, Boolean(open));
     const suffix = safe(commandId);
@@ -1711,7 +1773,34 @@ export class ProjectService {
       );
       batch.emit(
         'method.override_recorded',
-        { sectionId: command.sectionId, value: command.value },
+        { sectionId: command.sectionId, value: command.value, source: 'user' },
+        { source: 'user' },
+      );
+      return batch.commit();
+    });
+  }
+
+  editPlanSection(
+    projectId: ProjectId,
+    command: PlanSectionCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      this.assertSequence(
+        'Plan',
+        projection.planDocument.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        'plan.section_edited',
+        { sectionId: command.sectionId, lines: command.lines, source: 'user' },
         { source: 'user' },
       );
       return batch.commit();

@@ -889,6 +889,39 @@ describe('brief and method', () => {
   });
 });
 
+describe('plan document', () => {
+  it('starts empty, records section edits with their source, and rejects no-ops', () => {
+    const s = new Scenario().createProject();
+    expect(s.p.planDocument).toEqual({ sections: {}, lastSequence: 1 });
+    s.emit('plan.section_edited', {
+      sectionId: 'features',
+      lines: ['Offline sync', 'Shared lists'],
+      source: 'user',
+    });
+    expect(s.p.planDocument.sections.features).toEqual({
+      lines: ['Offline sync', 'Shared lists'],
+      source: 'user',
+      updatedAtSequence: s.p.lastSequence,
+    });
+    expect(s.p.planDocument.lastSequence).toBe(s.p.lastSequence);
+    expect(
+      s.attempt('plan.section_edited', {
+        sectionId: 'features',
+        lines: ['Offline sync', 'Shared lists'],
+        source: 'coordinator',
+      }),
+    ).toThrowError(code('invalid_payload'));
+    s.emit('plan.section_edited', {
+      sectionId: 'features',
+      lines: [],
+      source: 'coordinator',
+    });
+    expect(s.p.planDocument.sections.features?.lines).toEqual([]);
+    expect(s.p.planDocument.sections.features?.source).toBe('coordinator');
+    expect(s.p.planDocument.sections.ui).toBeUndefined();
+  });
+});
+
 describe('right-now summary', () => {
   it('derives status and attention deterministically through a project lifetime', () => {
     const s = new Scenario().createProject();

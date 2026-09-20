@@ -10,6 +10,7 @@ import {
   BriefFieldIdSchema,
   MethodDefinitionSchema,
   MethodOverrideCommandSchema,
+  PlanSectionCommandSchema,
   AskDecisionCommandSchema,
   AskIdSchema,
   CommandErrorSchema,
@@ -243,6 +244,22 @@ export function registerProjectRoutes(
       }
       const result = handle(() =>
         projects.overrideMethod(params.data.projectId, command.data),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return CommandResponseSchema.parse(result.value);
+    },
+  );
+
+  service.post(
+    '/api/projects/:projectId/plan/sections',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      const command = PlanSectionCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('plan section'));
+      }
+      const result = handle(() =>
+        projects.editPlanSection(params.data.projectId, command.data),
       );
       if (!result.ok) return reply.code(result.status).send(result.body);
       return CommandResponseSchema.parse(result.value);

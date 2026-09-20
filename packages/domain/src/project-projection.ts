@@ -319,6 +319,7 @@ export function applyProjectEvent(
       threads: {},
       agents: {},
       tasks: {},
+      planDocument: { sections: {}, lastSequence: sequence },
       plans: {},
       proposals: {},
       asks: {},
@@ -564,10 +565,34 @@ export function applyProjectEvent(
           {
             sectionId: event.payload.sectionId,
             value: event.payload.value,
+            ...(event.payload.source ? { source: event.payload.source } : {}),
             recordedAtSequence: sequence,
           },
         ],
         version: next.method.version + 1,
+        lastSequence: sequence,
+      };
+      break;
+    }
+
+    case 'plan.section_edited': {
+      const { sectionId, lines, source } = event.payload;
+      const previous = next.planDocument.sections[sectionId];
+      if (
+        previous &&
+        previous.lines.length === lines.length &&
+        previous.lines.every((line, index) => line === lines[index])
+      ) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Plan section ${sectionId} already reads that way.`,
+        );
+      }
+      next.planDocument = {
+        sections: {
+          ...next.planDocument.sections,
+          [sectionId]: { lines, source, updatedAtSequence: sequence },
+        },
         lastSequence: sequence,
       };
       break;

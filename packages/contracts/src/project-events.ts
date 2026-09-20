@@ -34,6 +34,8 @@ import {
   MethodSnapshotSchema,
   OutputSchema,
   PlanSchema,
+  PlanSectionIdSchema,
+  DocumentEditSourceSchema,
   ProjectSchema,
   ProposalSchema,
   ProposalStateSchema,
@@ -121,6 +123,18 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
     z.strictObject({
       sectionId: MethodSectionIdSchema,
       value: z.array(z.string().min(1)),
+      source: DocumentEditSourceSchema.optional(),
+      messageId: MessageIdSchema.optional(),
+    }),
+  ),
+
+  projectEvent(
+    'plan.section_edited',
+    z.strictObject({
+      sectionId: PlanSectionIdSchema,
+      lines: z.array(z.string().min(1).max(500)),
+      source: DocumentEditSourceSchema,
+      messageId: MessageIdSchema.optional(),
     }),
   ),
   projectEvent(

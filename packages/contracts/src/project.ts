@@ -178,6 +178,8 @@ export const MethodDefinitionSchema = z.strictObject({
 export const MethodOverrideSchema = z.strictObject({
   sectionId: MethodSectionIdSchema,
   value: z.array(z.string().min(1)),
+  // Absent on overrides recorded before edits carried a source.
+  source: z.enum(['user', 'coordinator']).optional(),
   recordedAtSequence: SequenceSchema,
 });
 
@@ -414,6 +416,48 @@ export const OutputSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
+// The plan document: what the project should become, in sections. Written
+// by you directly or through the coordinator; the task plan below is the
+// work derived from it.
+// ---------------------------------------------------------------------------
+
+export const PlanSectionIdSchema = z.enum([
+  'overview',
+  'features',
+  'ui',
+  'visual',
+  'data',
+  'risks',
+]);
+
+export const PLAN_SECTIONS: Readonly<
+  Record<
+    z.infer<typeof PlanSectionIdSchema>,
+    { readonly title: string; readonly hint: string }
+  >
+> = {
+  overview: { title: 'Overview', hint: 'What this is and who it is for.' },
+  features: { title: 'Features', hint: 'What it must do, one line each.' },
+  ui: { title: 'UI', hint: 'Screens, flows, and interactions.' },
+  visual: { title: 'Visual', hint: 'Look, tone, typography, colour.' },
+  data: { title: 'Data', hint: 'What is stored, where, and how it moves.' },
+  risks: { title: 'Risks', hint: 'What could go wrong or is undecided.' },
+};
+
+export const DocumentEditSourceSchema = z.enum(['user', 'coordinator']);
+
+export const PlanSectionSchema = z.strictObject({
+  lines: z.array(z.string().min(1).max(500)),
+  source: DocumentEditSourceSchema,
+  updatedAtSequence: SequenceSchema,
+});
+
+export const PlanDocumentSchema = z.strictObject({
+  sections: z.partialRecord(PlanSectionIdSchema, PlanSectionSchema),
+  lastSequence: SequenceSchema,
+});
+
+// ---------------------------------------------------------------------------
 // Plans and proposals
 // ---------------------------------------------------------------------------
 
@@ -540,6 +584,10 @@ export type BriefFieldId = z.infer<typeof BriefFieldIdSchema>;
 export type BriefFieldState = z.infer<typeof BriefFieldStateSchema>;
 export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
+export type PlanSectionId = z.infer<typeof PlanSectionIdSchema>;
+export type PlanSection = z.infer<typeof PlanSectionSchema>;
+export type PlanDocument = z.infer<typeof PlanDocumentSchema>;
+export type DocumentEditSource = z.infer<typeof DocumentEditSourceSchema>;
 export type AgentModel = z.infer<typeof AgentModelSchema>;
 
 export function agentModel(agent: {
