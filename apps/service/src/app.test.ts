@@ -24,6 +24,7 @@ function testConfig(): AppConfig {
     databasePath: join(dataDirectory, 'test.db'),
     sessionToken: 'a'.repeat(64),
     allowedOrigins: ['http://127.0.0.1:5173'],
+    demoProject: false,
   };
 }
 
@@ -59,7 +60,7 @@ describe('local service boundary', () => {
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json()).toMatchObject({
       record: { id: 'increment-0' },
-      migrationCount: 2,
+      migrationCount: 3,
     });
 
     await service.close();

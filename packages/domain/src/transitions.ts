@@ -13,7 +13,8 @@ export class TransitionError extends Error {
   readonly code: 'invalid_transition' | 'terminal_state';
 
   constructor(
-    readonly entity: TransitionEntity,
+    // Run-stream entities or project-stream entities; both share this error.
+    readonly entity: TransitionEntity | (string & {}),
     readonly from: string,
     readonly to: string,
     code: 'invalid_transition' | 'terminal_state',

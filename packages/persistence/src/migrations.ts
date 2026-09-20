@@ -59,6 +59,82 @@ const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // Increment 2.6: one append-only stream per project, with messages and
+    // command receipts written in the same transaction as the events.
+    version: 3,
+    name: 'project-streams-messages-receipts',
+    sql: `
+      CREATE TABLE project_events (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        type TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        occurred_at TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        event_core_json TEXT NOT NULL,
+        provider_metadata_json TEXT,
+        UNIQUE (project_id, sequence)
+      );
+
+      CREATE INDEX project_events_project_sequence_idx
+        ON project_events (project_id, sequence);
+
+      CREATE TRIGGER project_events_are_append_only_update
+      BEFORE UPDATE ON project_events
+      BEGIN
+        SELECT RAISE(ABORT, 'project events are append-only');
+      END;
+
+      CREATE TRIGGER project_events_are_append_only_delete
+      BEFORE DELETE ON project_events
+      BEGIN
+        SELECT RAISE(ABORT, 'project events are append-only');
+      END;
+
+      CREATE TABLE project_projections (
+        project_id TEXT PRIMARY KEY,
+        last_sequence INTEGER NOT NULL CHECK (last_sequence > 0),
+        projection_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        message_json TEXT NOT NULL,
+        UNIQUE (project_id, sequence)
+      );
+
+      CREATE INDEX messages_thread_sequence_idx
+        ON messages (thread_id, sequence);
+
+      CREATE TRIGGER messages_are_append_only_update
+      BEFORE UPDATE ON messages
+      BEGIN
+        SELECT RAISE(ABORT, 'messages are append-only');
+      END;
+
+      CREATE TRIGGER messages_are_append_only_delete
+      BEFORE DELETE ON messages
+      BEGIN
+        SELECT RAISE(ABORT, 'messages are append-only');
+      END;
+
+      CREATE TABLE command_receipts (
+        command_id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        first_sequence INTEGER NOT NULL CHECK (first_sequence > 0),
+        last_sequence INTEGER NOT NULL CHECK (last_sequence > 0),
+        created_ids_json TEXT NOT NULL,
+        recorded_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function runMigrations(database: Database.Database): number {

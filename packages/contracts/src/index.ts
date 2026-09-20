@@ -4,6 +4,11 @@ export * from './entities.js';
 export * from './experience.js';
 export * from './events.js';
 export * from './ids.js';
+export * from './project.js';
+export * from './project-commands.js';
+export * from './project-events.js';
+export * from './project-ids.js';
+export * from './project-projection.js';
 export * from './projections.js';
 export * from './runtime.js';
 

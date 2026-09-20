@@ -19,6 +19,8 @@ Open `http://127.0.0.1:5173`. The client proxies `/api` requests to the loopback
 
 Local state is stored outside the repository in the operating system's user-data directory. Override it with an absolute `HARNESS_DATA_DIR` path when isolation is useful.
 
+`npm run dev` sets `HARNESS_DEMO_PROJECT=1` so the service seeds one demo project ("Account preferences loop", two agents) the first time it starts against a data directory. The flag is off by default for `npm start`; without it the app opens on your own projects only.
+
 ## Verify
 
 ```bash
@@ -29,7 +31,11 @@ Run migrations directly with `npm run db:migrate`. Migrations are transactional 
 
 The authenticated local service can execute deterministic development scenarios with `POST /api/simulated-runs` and retrieve the resulting authoritative projection with `GET /api/runs/:runId`. The visual product loop uses `POST /api/demo-runs`, typed advancement and approval commands, bounded cursor replay at `GET /api/runs/:runId/events`, and authoritative persisted-state refresh through `GET /api/workspace`. The replay endpoint returns events after a supplied cursor; it is useful recovery infrastructure, not an open live stream. The browser never owns execution status.
 
-The client is a viewport-bound operational shell with addressable Project, Methodologies, Plan, Current Run, Capability Atlas, Review, and History surfaces. Repository assessment, methodology compilation, capability metadata, plan execution, and the run itself remain clearly labeled deterministic fixtures. Real repository scanning begins in Increment 3; no live provider is connected.
+### Projects, conversations, and agents (Increment 2.6)
+
+The product surface is a set of **conversations on one persisted project stream**: a coordinator thread and one thread per agent. `POST /api/projects` creates a project; `POST /api/projects/:id/threads/:ref/messages` posts to the coordinator or an agent (`intent: chat` never creates work, `start_work` does); `…/agents/:id/advance`, `…/agents/:id/stop`, `…/agents/:id/asks/:askId`, and `…/proposals/:id` drive work per agent; `…/method`, `…/method/overrides`, and `…/brief/fields/:fieldId` shape the project. Messages are read by cursor at `GET …/threads/:ref/messages` and events at `GET …/events`. Every mutating command carries a client `commandId` (retries are idempotent) and the `expectedSequence` of the thread, agent, proposal, brief, or method it targets. The coordinator and agents are deterministic simulators; see `docs/increment-2-6-handoff.md` for the event catalog, scripts, and keyword rules.
+
+The Increment 2 demo run (`/api/workspace`, `/api/demo-runs`, the "Plan demo" menu in the client) is a **compatibility path** kept for its regression tests; new work does not use the run stream. Real repository scanning and a live provider remain the next seam; no live provider is connected.
 
 ## Boundaries that must remain stable
 

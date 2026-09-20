@@ -28,6 +28,7 @@ function fixtureConfig(): AppConfig {
     databasePath: join(dataDirectory, 'test.db'),
     sessionToken: 'b'.repeat(64),
     allowedOrigins: ['http://127.0.0.1:5173'],
+    demoProject: false,
   };
 }
 

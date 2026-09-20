@@ -26,6 +26,9 @@ vi.mock('./api', () => ({
   launchDemoRun: vi.fn(),
   readDemoRun: vi.fn(),
   readWorkspace: vi.fn(),
+  // No persisted project in these tests: the fixture shell stands alone.
+  listProjects: vi.fn().mockResolvedValue({ projects: [] }),
+  readProject: vi.fn(),
 }));
 
 const workspace = WorkspaceFixtureSchema.parse({

@@ -51,3 +51,5 @@ export function getFoundationRecord(
 
 export { getMigrationCount, runMigrations } from './migrations.js';
 export * from './event-store.js';
+export * from './project-store.js';
+export { SqliteStreamStore } from './stream-store.js';

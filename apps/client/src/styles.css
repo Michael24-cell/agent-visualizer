@@ -3114,10 +3114,13 @@ button:disabled {
   color: var(--text);
   border-color: var(--border);
 }
-.danger-action.small {
+.danger-action.small,
+.secondary-action.small {
   height: 32px;
   padding: 0 12px;
   font-size: 12px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .frame-body {
@@ -3582,6 +3585,209 @@ button:disabled {
   margin-top: 4px;
 }
 
+/* --- Project panel (Increment 2.6) ---------------------------------------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.project-switch select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.project-new {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+.project-new .primary-action.small {
+  justify-self: start;
+}
+.project-new input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.project-new-button {
+  justify-self: start;
+  margin-top: 4px;
+  padding-inline: 0;
+}
+.detail-body > div,
+.detail-body > ul,
+.detail-body > ol,
+.detail-body > p {
+  padding: 14px 18px 18px;
+  min-width: 0;
+}
+.detail-lead,
+.detail-foot {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.detail-lead strong {
+  color: var(--text);
+}
+.detail-foot {
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+.field-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.field-row,
+.plan-view,
+.brief-view,
+.method-view,
+.history-list {
+  align-content: start;
+}
+.detail-body > * {
+  align-self: start;
+}
+.field-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.field-row.state-inferred {
+  border-color: color-mix(in srgb, var(--category) 45%, transparent);
+}
+.field-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.field-head strong {
+  font-size: 13px;
+}
+.field-head .pane-state {
+  margin-left: auto;
+}
+.field-state {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.field-value {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.field-value.muted {
+  color: var(--text-muted);
+}
+.field-lines {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+}
+.field-edit {
+  display: grid;
+  gap: 8px;
+}
+.field-edit textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.field-row .ask-actions {
+  margin-top: 2px;
+}
+.brief-requests h3 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+}
+.brief-requests ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.plan-view {
+  display: grid;
+  gap: 14px;
+}
+.plan-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.plan-block.plan-superseded {
+  opacity: 0.6;
+}
+.plan-block .plan-task-agent {
+  line-height: 1.45;
+}
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 14px 18px 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.history-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.history-list code {
+  font-size: 12px;
+}
+.pane-switcher button.is-closed {
+  opacity: 0.7;
+}
+.history-seq {
+  color: var(--text-muted);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 1240px) {
   .frame-body {
     grid-template-columns: minmax(0, 1fr) 340px;
@@ -3814,6 +4020,9 @@ button:disabled {
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  /* One explicit column; otherwise the implicit `auto` track grows to the
+     header's max-content width and the page scrolls sideways on phones. */
+  grid-template-columns: minmax(0, 1fr);
 }
 .pane-header {
   display: flex;
@@ -3970,10 +4179,25 @@ button:disabled {
 }
 .plan-tasks li {
   display: grid;
-  grid-template-columns: 8px 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: 8px 18px minmax(0, 1fr);
+  grid-template-areas: 'dot index title' '. . agent';
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
   font-size: 13px;
+}
+.plan-tasks li > .cat-dot {
+  grid-area: dot;
+  align-self: center;
+}
+.plan-tasks li > .plan-task-index {
+  grid-area: index;
+}
+.plan-tasks li > .plan-task-title {
+  grid-area: title;
+}
+.plan-tasks li > .plan-task-agent {
+  grid-area: agent;
 }
 .plan-task-index {
   color: var(--text-muted);

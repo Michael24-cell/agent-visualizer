@@ -18,7 +18,13 @@ const child = spawn(
     'npm run dev -w @harness/client',
   ],
   {
-    env: { ...process.env, HARNESS_SESSION_TOKEN: sessionToken },
+    // The demo project is opt-in for the service; dev turns it on so the
+    // shell has a persisted project to open.
+    env: {
+      HARNESS_DEMO_PROJECT: '1',
+      ...process.env,
+      HARNESS_SESSION_TOKEN: sessionToken,
+    },
     stdio: 'inherit',
   },
 );

@@ -22,6 +22,7 @@ import {
 import { RunProjectionSchema, executeRuntimeRun } from '@harness/domain';
 import {
   SqliteEventStore,
+  SqliteProjectStore,
   getFoundationRecord,
   openHarnessDatabase,
   saveFoundationRecord,
@@ -41,6 +42,8 @@ import {
   snapshotFor,
   workspaceFixture,
 } from './demo-run.js';
+import { registerProjectRoutes } from './project-routes.js';
+import { ProjectService } from './projects.js';
 
 const FOUNDATION_RECORD_ID = 'increment-0';
 const StartSimulatedRunSchema = z.strictObject({
@@ -70,6 +73,10 @@ export function createService(config: AppConfig) {
   const store = openHarnessDatabase(config.databasePath);
   const eventStore = new SqliteEventStore(store.database);
   eventStore.rebuildAllProjections();
+  const projectStore = new SqliteProjectStore(store.database);
+  projectStore.rebuildAllProjections();
+  const projects = new ProjectService(projectStore);
+  if (config.demoProject) projects.ensureDemoProject();
   const foundationRecord: FoundationRecord = {
     id: FOUNDATION_RECORD_ID,
     value: 'Repository foundation ready',
@@ -316,6 +323,8 @@ export function createService(config: AppConfig) {
     }
     return RunProjectionSchema.parse(projection);
   });
+
+  registerProjectRoutes(service, projects);
 
   service.addHook('onClose', async () => {
     store.close();

@@ -251,10 +251,12 @@ export function Pane({
 export function AddPaneMenu({
   rooms,
   open,
+  label = 'Add pane',
   onAdd,
 }: {
   rooms: readonly RoomViewModel[];
   open: readonly RoomId[];
+  label?: string;
   onAdd: (room: RoomId) => void;
 }) {
   const available = rooms.filter(
@@ -263,7 +265,7 @@ export function AddPaneMenu({
   if (!available.length) return null;
   return (
     <div className="add-pane">
-      <span>Add pane</span>
+      <span>{label}</span>
       {available.map((room) => (
         <button
           type="button"

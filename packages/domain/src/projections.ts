@@ -23,7 +23,20 @@ export class ProjectionError extends Error {
       | 'missing_entity'
       | 'duplicate_entity'
       | 'state_mismatch'
-      | 'completion_blocked',
+      | 'completion_blocked'
+      // Project-stream policies (see project-projection.ts).
+      | 'missing_project'
+      | 'project_mismatch'
+      | 'invalid_payload'
+      | 'thread_closed'
+      | 'agent_busy'
+      | 'ask_open'
+      | 'inputs_missing'
+      | 'not_approved'
+      | 'plan_conflict'
+      | 'plan_superseded'
+      | 'plan_incomplete'
+      | 'snapshot_mismatch',
     message: string,
   ) {
     super(message);
