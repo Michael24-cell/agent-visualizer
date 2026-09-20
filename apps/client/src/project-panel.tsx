@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
+  AGENT_MODELS,
   BRIEF_REQUIRED_FIELDS,
   BriefFieldIdSchema,
+  agentModel,
   MethodSectionIdSchema,
   type BriefFieldId,
   type MethodDefinition,
@@ -494,6 +496,7 @@ function AgentsView({ project }: DetailProps) {
             <p className="field-state">
               {agent.taskIds.length}{' '}
               {agent.taskIds.length === 1 ? 'task' : 'tasks'} so far
+              {` · ${AGENT_MODELS[agentModel(agent)].label}`}
               {task?.skills.length
                 ? ` · skills: ${task.skills.join(', ')}`
                 : ''}

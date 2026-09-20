@@ -658,6 +658,19 @@ export function applyProjectEvent(
       break;
     }
 
+    case 'agent.model_changed': {
+      const agent = requireAgent(next, event.payload.agentId);
+      if (agent.model === event.payload.model) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Agent ${agent.id} already runs on ${agent.model}.`,
+        );
+      }
+      next.agents[agent.id] = { ...agent, model: event.payload.model };
+      targets.agent(agent.id);
+      break;
+    }
+
     case 'plan.recorded': {
       const plan = event.payload.plan;
       assertProject(next, plan.projectId);

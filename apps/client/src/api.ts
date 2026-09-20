@@ -6,6 +6,7 @@ import {
   ProjectEventsPageSchema,
   ProjectListResponseSchema,
   ProjectResponseSchema,
+  type AgentModel,
   type BriefFieldId,
   type CommandResponse,
   type FolderListing,
@@ -165,6 +166,26 @@ export async function stopAgent(
         body: JSON.stringify({
           commandId: crypto.randomUUID(),
           expectedSequence,
+        }),
+      })
+    ).json(),
+  );
+}
+
+export async function setAgentModel(
+  projectId: string,
+  agentId: string,
+  expectedSequence: number,
+  model: AgentModel,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/agents/${agentId}/model`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          model,
         }),
       })
     ).json(),

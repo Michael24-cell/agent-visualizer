@@ -17,6 +17,7 @@ import {
 } from './project-ids.js';
 import {
   AdapterProvenanceSchema,
+  AgentModelSchema,
   AgentSchema,
   AgentTaskSchema,
   AgentTaskStateSchema,
@@ -128,6 +129,10 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
   ),
 
   projectEvent('agent.created', z.strictObject({ agent: AgentSchema })),
+  projectEvent(
+    'agent.model_changed',
+    z.strictObject({ agentId: AgentIdSchema, model: AgentModelSchema }),
+  ),
 
   projectEvent('plan.recorded', z.strictObject({ plan: PlanSchema })),
   projectEvent(

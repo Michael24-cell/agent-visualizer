@@ -25,6 +25,7 @@ import {
   ProjectResponseSchema,
   ProposalDecisionCommandSchema,
   ProposalIdSchema,
+  SetAgentModelCommandSchema,
 } from '@harness/contracts';
 import { METHOD_CATALOG } from '@harness/runtime-simulated';
 import { FolderError, listFolders } from './folders.js';
@@ -324,6 +325,26 @@ export function registerProjectRoutes(
           params.data.projectId,
           params.data.agentId,
           params.data.askId,
+          command.data,
+        ),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return CommandResponseSchema.parse(result.value);
+    },
+  );
+
+  service.post(
+    '/api/projects/:projectId/agents/:agentId/model',
+    async (request, reply) => {
+      const params = AgentParams.safeParse(request.params);
+      const command = SetAgentModelCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('model command'));
+      }
+      const result = handle(() =>
+        projects.setAgentModel(
+          params.data.projectId,
+          params.data.agentId,
           command.data,
         ),
       );

@@ -5,11 +5,14 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
-import type {
-  Ask,
-  Message,
-  ProjectResponse,
-  Proposal,
+import {
+  AGENT_MODELS,
+  AgentModelSchema,
+  agentModel,
+  type Ask,
+  type Message,
+  type ProjectResponse,
+  type Proposal,
 } from '@harness/contracts';
 import {
   ApiError,
@@ -19,6 +22,7 @@ import {
   postMessage,
   readMessages,
   readProject,
+  setAgentModel,
   stopAgent,
 } from './api';
 import {
@@ -457,6 +461,36 @@ export function LivePane({
               'No task yet — type to talk, /start to give it work')
             : 'Plans the project with you'}
         </span>
+        {target.kind === 'agent' ? (
+          <label className="pane-model">
+            <span className="visually-hidden">Model for {title}</span>
+            <select
+              value={agentModel(target.agent)}
+              disabled={busy}
+              title={AGENT_MODELS[agentModel(target.agent)].note}
+              onChange={(event) => {
+                const agent = target.agent;
+                const model = AgentModelSchema.parse(event.target.value);
+                void run(
+                  () =>
+                    setAgentModel(
+                      projectId,
+                      agent.id,
+                      agent.lastSequence,
+                      model,
+                    ),
+                  `${AGENT_MODELS[model].label} from the next step on.`,
+                );
+              }}
+            >
+              {AgentModelSchema.options.map((model) => (
+                <option key={model} value={model}>
+                  {AGENT_MODELS[model].label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {work ? (
           <span className={`pane-state work-${work}`}>{workLabels[work]}</span>
         ) : null}

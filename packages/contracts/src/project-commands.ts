@@ -12,6 +12,7 @@ import {
   ProjectSummarySchema,
 } from './project-projection.js';
 import {
+  AgentModelSchema,
   BriefFieldIdSchema,
   MessageBodySchema,
   MessageSchema,
@@ -58,6 +59,19 @@ export const CreateAgentCommandSchema = z.strictObject({
   ...CommandBaseShape,
   name: z.string().trim().min(1).max(80),
   category: CapabilityCategorySchema,
+  model: AgentModelSchema.optional(),
+});
+
+// Targets an agent; expectedSequence is that agent's lastSequence.
+export const SetAgentModelCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  model: AgentModelSchema,
+});
+
+// Which runtime produces coordinator and agent replies. Runtime state,
+// reported so the client can say so honestly.
+export const RuntimeInfoSchema = z.strictObject({
+  mode: z.enum(['simulated', 'live']),
 });
 
 // Targets a thread; expectedSequence is that thread's lastSequence.
@@ -150,6 +164,7 @@ export const ProjectResponseSchema = z.strictObject({
   // Threads whose reply is still being produced. Runtime state, not part
   // of the event stream: it is empty again after a restart.
   busyThreadIds: z.array(ThreadIdSchema).default([]),
+  runtime: RuntimeInfoSchema.default({ mode: 'simulated' }),
 });
 
 export const CommandResponseSchema = z.strictObject({
@@ -201,6 +216,8 @@ export const BriefRequestRefSchema = z.strictObject({
 
 export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
+export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
+export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type AttachRepositoryCommand = z.infer<
   typeof AttachRepositoryCommandSchema
 >;

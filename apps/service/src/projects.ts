@@ -13,6 +13,7 @@ import {
   ProposalIdSchema,
   TaskIdSchema,
   ThreadIdSchema,
+  modelForTier,
   type AdapterProvenanceSchema,
   type Agent,
   type AgentId,
@@ -40,6 +41,8 @@ import {
   type ProjectResponse,
   type Proposal,
   type ProposalDecisionCommand,
+  type RuntimeInfo,
+  type SetAgentModelCommand,
   type Thread,
 } from '@harness/contracts';
 import {
@@ -264,12 +267,15 @@ export interface ProjectServiceOptions {
   readonly replies?:
     | { readonly mode: 'inline' }
     | { readonly mode: 'deferred'; readonly delayMs: number };
+  // Reported to the client. Only the simulator answers in this build.
+  readonly runtime?: RuntimeInfo;
 }
 
 export class ProjectService {
   private readonly now: () => string;
   readonly folders: FolderOptions;
   private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
+  private readonly runtime: RuntimeInfo;
   // Threads with a reply in flight, and the promise that finishes it.
   private readonly pending = new Map<string, Promise<void>>();
 
@@ -280,6 +286,7 @@ export class ProjectService {
     this.now = options.now ?? (() => new Date().toISOString());
     this.folders = options.folders ?? {};
     this.replies = options.replies ?? { mode: 'inline' };
+    this.runtime = options.runtime ?? { mode: 'simulated' };
   }
 
   // Resolves once every in-flight reply for the project has landed.
@@ -314,6 +321,7 @@ export class ProjectService {
       busyThreadIds: this.busyThreadIds(
         projection.projectId,
       ) as ProjectResponse['busyThreadIds'],
+      runtime: this.runtime,
     };
   }
 
@@ -537,11 +545,47 @@ export class ProjectService {
     });
   }
 
+  setAgentModel(
+    projectId: ProjectId,
+    agentId: AgentId,
+    command: SetAgentModelCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      const agent = projection.agents[agentId];
+      if (!agent)
+        throw new ProjectCommandError('not_found', 'Agent was not found.');
+      this.assertSequence(
+        'Agent',
+        agent.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        'agent.model_changed',
+        { agentId, model: command.model },
+        { agentId, source: 'user' },
+      );
+      return batch.commit();
+    });
+  }
+
   private addAgent(
     batch: ProjectBatch,
     projectId: ProjectId,
     suffix: string,
-    input: { name: string; category: Agent['category'] },
+    input: {
+      name: string;
+      category: Agent['category'];
+      model?: Agent['model'];
+      modelTier?: Agent['modelTier'];
+    },
   ): AgentId {
     const agentId = AgentIdSchema.parse(`agent_${suffix}`);
     const threadId = ThreadIdSchema.parse(`thread_${suffix}`);
@@ -569,6 +613,8 @@ export class ProjectService {
           threadId,
           name: input.name,
           category: input.category,
+          ...(input.modelTier ? { modelTier: input.modelTier } : {}),
+          model: input.model ?? modelForTier(input.modelTier),
           work: 'idle',
           taskIds: [],
           createdAtSequence: batch.nextSequence(),
@@ -1117,6 +1163,7 @@ export class ProjectService {
         const agentId = this.addAgent(batch, projectId, `${suffix}_${index}`, {
           name: row.agentName,
           category: row.category,
+          ...(row.modelTier ? { modelTier: row.modelTier } : {}),
         });
         agent = batch.current.agents[agentId]!;
       }

@@ -147,8 +147,15 @@ export function Workspace({
           <span aria-hidden="true">☰</span>
         </button>
         <h1 className="app-title">{project.projection.project.name}</h1>
-        <span className="mode-badge" title="Simulated coordinator and agents">
-          Simulated
+        <span
+          className={`mode-badge mode-${project.runtime.mode}`}
+          title={
+            project.runtime.mode === 'live'
+              ? 'Agents run on Claude'
+              : 'Simulated coordinator and agents'
+          }
+        >
+          {project.runtime.mode === 'live' ? 'Claude' : 'Simulated'}
         </span>
         <span
           className={`pane-state work-${project.summary.status}`}

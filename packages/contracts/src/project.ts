@@ -105,6 +105,48 @@ export const BriefSchema = z.strictObject({
 
 export const ModelTierSchema = z.enum(['light', 'standard', 'deep']);
 
+// The model an agent runs on. Tiers are what plans and Methods ask for;
+// the model is what the user picks, defaulting from the tier.
+export const AgentModelSchema = z.enum(['opus', 'sonnet', 'haiku']);
+
+export const AGENT_MODELS: Readonly<
+  Record<
+    z.infer<typeof AgentModelSchema>,
+    { readonly label: string; readonly modelId: string; readonly note: string }
+  >
+> = {
+  opus: {
+    label: 'Opus',
+    modelId: 'claude-opus-5',
+    note: 'Deepest reasoning, highest cost',
+  },
+  sonnet: {
+    label: 'Sonnet',
+    modelId: 'claude-sonnet-5',
+    note: 'Balanced; the default',
+  },
+  haiku: {
+    label: 'Haiku',
+    modelId: 'claude-haiku-4-5-20251001',
+    note: 'Fastest and cheapest',
+  },
+};
+
+export const DEFAULT_AGENT_MODEL: z.infer<typeof AgentModelSchema> = 'sonnet';
+
+export function modelForTier(
+  tier: z.infer<typeof ModelTierSchema> | undefined,
+): z.infer<typeof AgentModelSchema> {
+  switch (tier) {
+    case 'light':
+      return 'haiku';
+    case 'deep':
+      return 'opus';
+    default:
+      return DEFAULT_AGENT_MODEL;
+  }
+}
+
 export const MethodSectionIdSchema = z.enum([
   'hardRules',
   'preferences',
@@ -259,6 +301,9 @@ export const AgentSchema = z.strictObject({
   category: CapabilityCategorySchema,
   profileId: z.string().min(1).optional(),
   modelTier: ModelTierSchema.optional(),
+  // Optional so agents recorded before models were chosen still replay;
+  // read it through agentModel().
+  model: AgentModelSchema.optional(),
   work: AgentWorkStateSchema,
   currentTaskId: TaskIdSchema.optional(),
   taskIds: z.array(TaskIdSchema),
@@ -495,6 +540,13 @@ export type BriefFieldId = z.infer<typeof BriefFieldIdSchema>;
 export type BriefFieldState = z.infer<typeof BriefFieldStateSchema>;
 export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
+export type AgentModel = z.infer<typeof AgentModelSchema>;
+
+export function agentModel(agent: {
+  model?: AgentModel | undefined;
+}): AgentModel {
+  return agent.model ?? DEFAULT_AGENT_MODEL;
+}
 export type MethodDefinition = z.infer<typeof MethodDefinitionSchema>;
 export type MethodSectionId = z.infer<typeof MethodSectionIdSchema>;
 export type ProjectMethod = z.infer<typeof ProjectMethodSchema>;
