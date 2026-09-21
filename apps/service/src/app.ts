@@ -113,6 +113,7 @@ export function createService(config: AppConfig) {
     ...runtimeOptions(config),
   });
   if (config.demoProject) projects.ensureDemoProject();
+  projects.recoverInterruptedRuns();
   const foundationRecord: FoundationRecord = {
     id: FOUNDATION_RECORD_ID,
     value: 'Repository foundation ready',

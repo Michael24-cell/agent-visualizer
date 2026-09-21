@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 // The tools a local model gets. Every path is confined to the task's
 // folder; the shell runs there too. Names mirror the Claude Agent SDK's so
@@ -45,17 +46,25 @@ function str(input: Record<string, unknown>, key: string): string {
   return value;
 }
 
-// Resolves a model-supplied path inside cwd, refusing anything outside.
+// Resolves a model-supplied path inside cwd, refusing anything outside,
+// including paths that only leave through a symlink.
 export function insideFolder(cwd: string, path: string): string {
   const target = resolve(cwd, path);
-  const rel = relative(cwd, target);
-  if (
-    rel === '' ||
-    (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
-  ) {
-    return target;
+  const outside = (rel: string) =>
+    rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  if (outside(relative(cwd, target))) {
+    throw new Error(`"${path}" is outside the project folder.`);
   }
-  throw new Error(`"${path}" is outside the project folder.`);
+  // Compare real locations: the nearest existing ancestor of the target
+  // against the real folder.
+  let existing = target;
+  while (!existsSync(existing)) existing = dirname(existing);
+  const realRoot = realpathSync(cwd);
+  const realTarget = realpathSync(existing);
+  if (realTarget !== realRoot && outside(relative(realRoot, realTarget))) {
+    throw new Error(`"${path}" is outside the project folder.`);
+  }
+  return target;
 }
 
 async function* walk(root: string, dir: string): AsyncGenerator<string> {

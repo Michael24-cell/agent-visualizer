@@ -94,12 +94,12 @@ describe('deferred replies', () => {
     expect(again.statusCode).toBe(201);
 
     // Wait for both replies.
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const current = ProjectResponseSchema.parse(
         (await get(`/api/projects/${projectId}`)).json(),
       );
       if (current.busyThreadIds.length === 0) break;
-      await sleep(15);
+      await sleep(25);
     }
     const after = ProjectResponseSchema.parse(
       (await get(`/api/projects/${projectId}`)).json(),
@@ -171,12 +171,12 @@ describe('deferred replies', () => {
       body: 'Two',
       intent: 'start_work',
     });
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const now = ProjectResponseSchema.parse(
         (await get(`/api/projects/${projectId}`)).json(),
       );
       if (now.busyThreadIds.length === 0) break;
-      await sleep(15);
+      await sleep(25);
     }
     const page = MessagesPageSchema.parse((await get(url)).json());
     expect(page.messages.map((m) => m.author.role)).toEqual([

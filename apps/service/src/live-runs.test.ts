@@ -330,4 +330,58 @@ describe('live runs', () => {
       }),
     ).toThrow(/works on its own/);
   });
+
+  it('after a restart, tasks left running are stopped honestly instead of re-run', async () => {
+    // A run that never finishes: the process "dies" with the task working.
+    const frames: FrameSource = async function* () {
+      yield text('working away');
+      await new Promise(() => {});
+    };
+    const { root, service } = setup(frames);
+    const ids = createProject(service, root);
+    const started = startWork(service, ids, 'Long task');
+    const taskId = started.receipt.createdIds.tasks![0]!;
+    await tick();
+    await tick();
+
+    // A second service over the same store, as after a restart.
+    const database = openHarnessDatabase(join(root, 'test.db'));
+    const store = new SqliteProjectStore(database.database);
+    store.rebuildAllProjections();
+    const restarted = new ProjectService(store, {
+      folders: { root },
+      runtime: { mode: 'live' },
+      frames: async function* () {
+        yield text('must not start a run');
+        throw new Error('must not start a run');
+      },
+    });
+    restarted.recoverInterruptedRuns();
+    const project = restarted.getProject(ids.projectId as never);
+    expect(project.projection.tasks[taskId]!.state).toBe('stopped');
+    expect(project.projection.agents[ids.agentId]!.work).toBe('stopped');
+    const last = restarted
+      .listMessages(ids.projectId as never, ids.threadId, { limit: 5 })
+      .messages.at(-1)!;
+    expect(last.author.role).toBe('system');
+    expect(last.body).toMatch(/restarted/);
+
+    // The next command does not resurrect the run.
+    const thread = project.projection.threads[ids.threadId]!;
+    restarted.postMessage(
+      ids.projectId as never,
+      ids.threadId,
+      PostMessageCommandSchema.parse({
+        commandId: commandId(),
+        expectedSequence: thread.lastSequence,
+        body: 'hello',
+      }),
+    );
+    await restarted.whenIdle();
+    expect(
+      restarted.getProject(ids.projectId as never).projection.tasks[taskId]!
+        .state,
+    ).toBe('stopped');
+    service.stopAll();
+  });
 });

@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -267,10 +268,14 @@ describe('runOpenAiTask', () => {
 });
 
 describe('insideFolder', () => {
-  it('keeps paths inside the folder', () => {
-    expect(insideFolder('/p', 'src/a.ts')).toBe('/p/src/a.ts');
-    expect(insideFolder('/p', '.')).toBe('/p');
-    expect(() => insideFolder('/p', '../x')).toThrow(/outside/);
-    expect(() => insideFolder('/p', '/etc/passwd')).toThrow(/outside/);
+  it('keeps paths inside the folder, including through symlinks', () => {
+    const cwd = project();
+    expect(insideFolder(cwd, 'src/a.ts')).toBe(join(cwd, 'src/a.ts'));
+    expect(insideFolder(cwd, 'new/file.txt')).toBe(join(cwd, 'new/file.txt'));
+    expect(insideFolder(cwd, '.')).toBe(cwd);
+    expect(() => insideFolder(cwd, '../x')).toThrow(/outside/);
+    expect(() => insideFolder(cwd, '/etc/passwd')).toThrow(/outside/);
+    symlinkSync(tmpdir(), join(cwd, 'escape'));
+    expect(() => insideFolder(cwd, 'escape/anything')).toThrow(/outside/);
   });
 });

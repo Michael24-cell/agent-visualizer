@@ -5184,6 +5184,11 @@ button:disabled {
 .doc-edit:focus-visible {
   opacity: 1;
 }
+@media (hover: none) {
+  .doc-edit {
+    opacity: 0.7;
+  }
+}
 .doc-edit:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);

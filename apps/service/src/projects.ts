@@ -4,6 +4,7 @@ import {
   BriefRequestIdSchema,
   CheckIdSchema,
   EventIdSchema,
+  MESSAGE_BODY_MAX_LENGTH,
   MessageIdSchema,
   MethodSnapshotIdSchema,
   OutputIdSchema,
@@ -306,7 +307,10 @@ export class ProjectService {
   private readonly runtime: RuntimeInfo;
   private readonly runner: TaskRunner;
   // Live runs by task id, and the permission waits they are paused on.
-  private readonly liveRuns = new Map<string, LiveTask>();
+  private readonly liveRuns = new Map<
+    string,
+    { readonly run: LiveTask; readonly projectId: ProjectId }
+  >();
   private readonly askWaiters = new Map<
     string,
     (decision: 'approved' | 'denied') => void
@@ -337,16 +341,16 @@ export class ProjectService {
       (key) => !projectId || key.startsWith(`${projectId}:`),
     );
     await Promise.all(keys.map((key) => this.pending.get(key)));
-    const runs = [...this.liveRuns.entries()]
-      .filter(([taskId]) => !projectId || taskId.includes(safe(projectId)))
-      .map(([, run]) => run.done);
+    const runs = [...this.liveRuns.values()]
+      .filter((entry) => !projectId || entry.projectId === projectId)
+      .map((entry) => entry.run.done);
     await Promise.all(runs);
   }
 
   // Stops every live run; used on shutdown so no agent keeps working
   // after the harness is gone.
   stopAll(): void {
-    for (const run of this.liveRuns.values()) run.stop();
+    for (const entry of this.liveRuns.values()) entry.run.stop();
     for (const resolve of this.askWaiters.values()) resolve('denied');
     this.askWaiters.clear();
   }
@@ -476,11 +480,12 @@ export class ProjectService {
       this.askWaiters.delete(askId);
       resolve(ask.state === 'approved' ? 'approved' : 'denied');
     }
-    for (const [taskId, run] of [...this.liveRuns.entries()]) {
+    for (const [taskId, entry] of [...this.liveRuns.entries()]) {
+      if (entry.projectId !== projectId) continue;
       const task = projection.tasks[taskId];
       if (!task) continue;
       if (task.state !== 'working' && task.state !== 'needs_you') {
-        run.stop();
+        entry.run.stop();
         this.liveRuns.delete(taskId);
       }
     }
@@ -591,10 +596,69 @@ export class ProjectService {
       },
       { emit, ask },
     );
-    this.liveRuns.set(task.id, run);
+    this.liveRuns.set(task.id, { run, projectId });
     void run.done.finally(() => {
-      if (this.liveRuns.get(task.id) === run) this.liveRuns.delete(task.id);
+      if (this.liveRuns.get(task.id)?.run === run)
+        this.liveRuns.delete(task.id);
     });
+  }
+
+  // After a restart nothing is running any more, but tasks recorded as in
+  // progress would otherwise be re-run from scratch by the next command.
+  // Stop them honestly; the user starts again when ready.
+  recoverInterruptedRuns(): void {
+    if (!this.isLive) return;
+    for (const projection of this.store.listProjections()) {
+      const batch = new ProjectBatch(
+        this.store,
+        projection.projectId,
+        randomUUID(),
+        this.now(),
+        projection,
+      );
+      let touched = false;
+      for (const agent of Object.values(projection.agents)) {
+        const task = agent.currentTaskId
+          ? projection.tasks[agent.currentTaskId]
+          : undefined;
+        if (!task || !['working', 'needs_you'].includes(task.state)) continue;
+        const meta = {
+          taskId: task.id,
+          agentId: agent.id,
+          source: 'system' as const,
+        };
+        for (const ask of Object.values(projection.asks)) {
+          if (ask.taskId !== task.id || ask.state !== 'open') continue;
+          batch.emit(
+            'ask.decided',
+            {
+              askId: ask.id,
+              from: 'open',
+              to: 'closed',
+              note: 'Closed because the harness restarted.',
+            },
+            meta,
+          );
+        }
+        batch.emit(
+          'task.state_changed',
+          {
+            taskId: task.id,
+            from: task.state,
+            to: 'stopped',
+            reason: 'The harness restarted while this was running.',
+          },
+          meta,
+        );
+        batch.post(
+          projection.threads[agent.threadId]!,
+          systemAuthor,
+          `The harness restarted while "${task.title}" was running. What was produced is kept; start it again to continue.`,
+        );
+        touched = true;
+      }
+      if (touched) batch.commit();
+    }
   }
 
   // A live agent says it is done, but a required check has no passing run
@@ -2055,11 +2119,17 @@ export class ProjectService {
       adapter,
     };
     switch (intent.kind) {
-      case 'say':
-        batch.post(thread, agentAuthor(agent, adapter), intent.body, 'chat', {
+      case 'say': {
+        // Model output can run long; the message body has a hard limit.
+        const body =
+          intent.body.length > MESSAGE_BODY_MAX_LENGTH
+            ? `${intent.body.slice(0, MESSAGE_BODY_MAX_LENGTH - 1)}…`
+            : intent.body;
+        batch.post(thread, agentAuthor(agent, adapter), body, 'chat', {
           taskId: task.id,
         });
         return;
+      }
       case 'output': {
         const outputId = OutputIdSchema.parse(`output_${suffix}`);
         batch.emit(
