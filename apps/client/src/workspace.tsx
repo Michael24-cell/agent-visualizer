@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { ProjectListResponse, ProjectResponse } from '@harness/contracts';
-import { attachRepository, listProjects, readProject } from './api';
+import {
+  attachRepository,
+  createAgent,
+  listProjects,
+  readProject,
+} from './api';
 import { FolderPicker } from './folder-picker';
 import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
 import { LivePane } from './live-pane';
@@ -72,6 +77,27 @@ export function Workspace({
     } catch (error) {
       onError(
         error instanceof Error ? error.message : 'The folder was not attached.',
+      );
+    }
+  };
+
+  // A new agent pane, ready to type into. Named by number; the first
+  // task it takes describes it well enough.
+  const addAgent = async () => {
+    const count = Object.keys(project.projection.agents).length + 1;
+    try {
+      const result = await createAgent(
+        project.projection.projectId,
+        project.projection.lastSequence,
+        `Agent ${count}`,
+        'neutral',
+      );
+      updateProject(result.project);
+      const agentId = result.receipt.createdIds.agents?.[0];
+      if (agentId) show(agentId);
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : 'The agent was not created.',
       );
     }
   };
@@ -255,6 +281,13 @@ export function Workspace({
                 </li>
               );
             })}
+            <li className="ws-list-add">
+              <button type="button" onClick={() => void addAgent()}>
+                <span className="cat-dot" aria-hidden="true" />
+                <span className="ws-list-name">New agent</span>
+                <small>a pane you can type into</small>
+              </button>
+            </li>
           </ul>
           <h2 className="ws-side-title">Project</h2>
           <ul className="ws-list">

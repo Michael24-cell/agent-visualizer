@@ -173,6 +173,27 @@ export async function stopAgent(
   );
 }
 
+export async function createAgent(
+  projectId: string,
+  expectedSequence: number,
+  name: string,
+  category: 'interface' | 'orchestration' | 'verification' | 'neutral',
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/agents`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          name,
+          category,
+        }),
+      })
+    ).json(),
+  );
+}
+
 export async function setAgentModel(
   projectId: string,
   agentId: string,

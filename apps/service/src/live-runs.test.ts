@@ -384,4 +384,35 @@ describe('live runs', () => {
     ).toBe('stopped');
     service.stopAll();
   });
+
+  it('starts the run when the task comes from a deferred reply, as in the app', async () => {
+    const frames: FrameSource = async function* () {
+      yield text('on it');
+      yield success('done');
+    };
+    const root = mkdtempSync(join(tmpdir(), 'visual-agent-live-'));
+    temporaryDirectories.push(root);
+    mkdirSync(join(root, 'repo'));
+    const database = openHarnessDatabase(join(root, 'test.db'));
+    const store = new SqliteProjectStore(database.database);
+    const service = new ProjectService(store, {
+      folders: { root },
+      runtime: { mode: 'live' },
+      frames,
+      replies: { mode: 'deferred', delayMs: 5 },
+    });
+    const ids = createProject(service, root);
+    const sent = startWork(service, ids, 'Deferred task');
+    // The user's message lands at once; the task and the run follow.
+    expect(sent.receipt.createdIds.tasks).toBeUndefined();
+    await service.whenIdle();
+    await service.whenIdle();
+    const project = service.getProject(ids.projectId as never);
+    const task = Object.values(project.projection.tasks)[0]!;
+    expect(task.state).toBe('done');
+    const bodies = service
+      .listMessages(ids.projectId as never, ids.threadId, { limit: 10 })
+      .messages.map((m) => m.body);
+    expect(bodies).toContain('on it');
+  });
 });

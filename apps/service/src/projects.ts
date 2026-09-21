@@ -988,6 +988,9 @@ export class ProjectService {
               );
               this.buildReply(batch, projectId, current, command, messageId);
               batch.commit();
+              // A deferred reply can create a task; live runs start here
+              // just as they do after a direct command.
+              if (this.isLive) this.reconcileLiveRuns(projectId);
             } catch (error) {
               this.postFailure(projectId, thread, error);
             } finally {
