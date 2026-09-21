@@ -418,3 +418,72 @@ describe('turn bounds', () => {
     ]);
   });
 });
+
+describe('plan tools', () => {
+  it('lets the model read and update the Plan when documents are offered', async () => {
+    const cwd = project();
+    const edits: [string, string[]][] = [];
+    const documents = {
+      readPlan: () => ({
+        sections: [
+          { id: 'overview', title: 'Overview', lines: ['A playground'] },
+          { id: 'features', title: 'Features', lines: [] },
+        ],
+      }),
+      updatePlanSection: async (sectionId: string, lines: string[]) => {
+        edits.push([sectionId, lines]);
+        return `Plan · ${sectionId} now has ${lines.length} lines.`;
+      },
+    };
+    const { fetchFn, requests } = server([
+      { tool_calls: [{ name: 'read_plan', args: {} }] },
+      {
+        tool_calls: [
+          {
+            name: 'update_plan_section',
+            args: {
+              section: 'Features',
+              lines: ['- Hello script', ' ', '2. Second point'],
+            },
+          },
+        ],
+      },
+      {
+        tool_calls: [
+          {
+            name: 'update_plan_section',
+            args: { section: 'nope', lines: ['x'] },
+          },
+        ],
+      },
+      { content: 'Plan updated.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask({ ...input(cwd), documents }, seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    const firstResult = requests[1]!.messages.find((m) => m.role === 'tool')!;
+    expect(firstResult.content).toContain('## Overview (overview)');
+    expect(firstResult.content).toContain('(empty)');
+    expect(edits).toEqual([['features', ['Hello script', 'Second point']]]);
+    const badResult = requests[3]!.messages
+      .filter((m) => m.role === 'tool')
+      .at(-1)!;
+    expect(badResult.content).toMatch(/Unknown section "nope"/);
+    expect(seen.asks).toEqual([]);
+    expect(seen.batches).toEqual([
+      [{ kind: 'activity', tool: 'Plan', target: 'Plan', summary: 'read' }],
+      [
+        {
+          kind: 'activity',
+          tool: 'Plan',
+          target: 'Plan · features',
+          summary: 'updated',
+        },
+      ],
+      [{ kind: 'finish', reason: 'Plan updated.' }],
+    ]);
+  });
+});

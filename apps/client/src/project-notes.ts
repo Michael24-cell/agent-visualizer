@@ -1,5 +1,6 @@
 import {
   BRIEF_REQUIRED_FIELDS,
+  type DocumentEditSource,
   type ProjectEvent,
   type ProjectResponse,
 } from '@harness/contracts';
@@ -107,7 +108,7 @@ export interface DocumentChange {
   readonly sequence: number;
   readonly document: 'plan' | 'method';
   readonly section: string;
-  readonly source: 'user' | 'coordinator';
+  readonly source: DocumentEditSource;
   readonly added: readonly string[];
   readonly removed: readonly string[];
 }
@@ -126,7 +127,7 @@ export function documentChanges(
     let document: 'plan' | 'method';
     let lines: readonly string[];
     let section: string;
-    let source: 'user' | 'coordinator';
+    let source: DocumentEditSource;
     if (event.type === 'plan.section_edited') {
       document = 'plan';
       key = `plan:${event.payload.sectionId}`;
@@ -192,4 +193,11 @@ export function artifactsNote(project: ProjectResponse): string {
   const count = artifactPaths(project).length;
   if (!count) return 'nothing written yet';
   return `${count} ${count === 1 ? 'file' : 'files'}`;
+}
+
+// Who made a document edit, as the UI names them.
+export function editorLabel(source: DocumentEditSource | undefined): string {
+  if (source === 'coordinator') return 'coordinator';
+  if (source === 'agent') return 'agent';
+  return 'you';
 }

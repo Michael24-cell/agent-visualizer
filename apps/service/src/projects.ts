@@ -14,6 +14,8 @@ import {
   ProjectIdSchema,
   ProposalIdSchema,
   TaskIdSchema,
+  PLAN_SECTIONS,
+  PlanSectionIdSchema,
   ThreadIdSchema,
   agentModel,
   modelForTier,
@@ -634,6 +636,47 @@ export class ProjectService {
       ]);
       return;
     }
+    // The Plan document as the agent sees it, and its edits recorded
+    // with the agent as source, like the user's own edits.
+    const documents = {
+      readPlan: () => {
+        const current = this.requireProjection(projectId).planDocument;
+        return {
+          sections: PlanSectionIdSchema.options.map((id) => ({
+            id,
+            title: PLAN_SECTIONS[id].title,
+            lines: [...(current.sections[id]?.lines ?? [])],
+          })),
+        };
+      },
+      updatePlanSection: async (sectionId: string, lines: string[]) => {
+        const parsed = PlanSectionIdSchema.safeParse(sectionId);
+        if (!parsed.success) return `Unknown section ${sectionId}.`;
+        const current = this.requireProjection(projectId);
+        if (current.tasks[task.id]?.state !== 'working') {
+          return 'The task is no longer running; the plan was not changed.';
+        }
+        const batch = new ProjectBatch(
+          this.store,
+          projectId,
+          randomUUID(),
+          this.now(),
+          current,
+        );
+        try {
+          batch.emit(
+            'plan.section_edited',
+            { sectionId: parsed.data, lines, source: 'agent' },
+            { source: 'agent', adapter: CLAUDE_AGENT_ADAPTER },
+          );
+          batch.commit();
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+        return `Plan · ${PLAN_SECTIONS[parsed.data].title} now has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}.`;
+      },
+    };
+
     const run = this.runner(
       {
         cwd: repository.path,
@@ -644,6 +687,7 @@ export class ProjectService {
           method: snapshot?.resolved,
         }),
         prompt: buildTaskPrompt(task),
+        documents,
       },
       { emit, ask },
     );

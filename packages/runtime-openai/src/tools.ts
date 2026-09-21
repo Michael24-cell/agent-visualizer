@@ -21,7 +21,8 @@ export interface ToolDefinition {
   // The name the model calls (snake_case for OpenAI-style function calling).
   readonly name: string;
   // The SDK-style name used for asks, checks and outputs.
-  readonly sdkName: 'Read' | 'Glob' | 'Grep' | 'Bash' | 'Edit' | 'Write';
+  readonly sdkName:
+    'Read' | 'Glob' | 'Grep' | 'Bash' | 'Edit' | 'Write' | 'Plan';
   readonly description: string;
   readonly parameters: Record<string, unknown>;
   readonly needsPermission: boolean;
@@ -324,4 +325,75 @@ export function sdkInput(
     default:
       return input;
   }
+}
+
+// Harness-side tools over the project's Plan document. Not gated by a
+// permission: the change is visible at once and easy to undo by editing.
+export function planTools(documents: {
+  readPlan(): { sections: { id: string; title: string; lines: string[] }[] };
+  updatePlanSection(sectionId: string, lines: string[]): Promise<string>;
+}): ToolDefinition[] {
+  const sectionIds = () => documents.readPlan().sections.map((s) => s.id);
+  return [
+    {
+      name: 'read_plan',
+      sdkName: 'Plan',
+      description:
+        'Read the project Plan document: what the project should become, in sections (overview, features, ui, visual, data, risks).',
+      parameters: { type: 'object', properties: {} },
+      needsPermission: false,
+      async run() {
+        const { sections } = documents.readPlan();
+        const text = sections
+          .map(
+            (section) =>
+              `## ${section.title} (${section.id})\n${
+                section.lines.length
+                  ? section.lines.map((line) => `- ${line}`).join('\n')
+                  : '(empty)'
+              }`,
+          )
+          .join('\n\n');
+        return { text };
+      },
+    },
+    {
+      name: 'update_plan_section',
+      sdkName: 'Plan',
+      description:
+        'Replace one section of the project Plan document with new lines. Use read_plan first; keep lines short, one point each.',
+      parameters: {
+        type: 'object',
+        properties: {
+          section: {
+            type: 'string',
+            description: 'One of: overview, features, ui, visual, data, risks.',
+          },
+          lines: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['section', 'lines'],
+      },
+      needsPermission: false,
+      async run(input) {
+        const section = str(input, 'section').toLowerCase();
+        if (!sectionIds().includes(section)) {
+          return {
+            text: `Unknown section "${section}". Use one of: ${sectionIds().join(', ')}.`,
+            isError: true,
+          };
+        }
+        // One point per line; models often add their own bullet markers.
+        const lines = Array.isArray(input.lines)
+          ? input.lines
+              .map((line) =>
+                String(line)
+                  .trim()
+                  .replace(/^(?:[-*•]|\d+[.)])\s+/, ''),
+              )
+              .filter(Boolean)
+          : [];
+        return { text: await documents.updatePlanSection(section, lines) };
+      },
+    },
+  ];
 }

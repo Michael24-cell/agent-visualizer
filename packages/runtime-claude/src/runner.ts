@@ -21,6 +21,15 @@ export interface LiveTaskInput {
   readonly systemPrompt: string;
   readonly prompt: string;
   readonly maxTurns?: number;
+  // The project's documents, when the runtime can offer them as tools.
+  readonly documents?: ProjectDocuments | undefined;
+}
+
+// What an agent may do with the Plan document: read it whole, or replace
+// one section. Edits land as the same event the user's edits do.
+export interface ProjectDocuments {
+  readPlan(): { sections: { id: string; title: string; lines: string[] }[] };
+  updatePlanSection(sectionId: string, lines: string[]): Promise<string>;
 }
 
 export interface LiveTaskSink {

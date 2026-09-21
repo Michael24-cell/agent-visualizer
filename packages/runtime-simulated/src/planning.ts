@@ -315,7 +315,7 @@ export type AgentStepIntent =
     }
   | {
       kind: 'activity';
-      tool: 'Read' | 'Grep' | 'Glob' | 'Other';
+      tool: 'Read' | 'Grep' | 'Glob' | 'Plan' | 'Other';
       target: string;
       summary?: string;
     }

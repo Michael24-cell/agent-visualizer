@@ -180,7 +180,7 @@ export const MethodOverrideSchema = z.strictObject({
   sectionId: MethodSectionIdSchema,
   value: z.array(z.string().min(1)),
   // Absent on overrides recorded before edits carried a source.
-  source: z.enum(['user', 'coordinator']).optional(),
+  source: z.enum(['user', 'coordinator', 'agent']).optional(),
   recordedAtSequence: SequenceSchema,
 });
 
@@ -401,7 +401,13 @@ export const CheckSchema = z.strictObject({
 // One tool use worth showing in the conversation but not worth an
 // entity of its own: reads, searches, listings. Commands become checks
 // and file changes become outputs.
-export const ActivityToolSchema = z.enum(['Read', 'Grep', 'Glob', 'Other']);
+export const ActivityToolSchema = z.enum([
+  'Read',
+  'Grep',
+  'Glob',
+  'Plan',
+  'Other',
+]);
 
 export const ActivitySchema = z.strictObject({
   id: ActivityIdSchema,
@@ -464,7 +470,11 @@ export const PLAN_SECTIONS: Readonly<
   risks: { title: 'Risks', hint: 'What could go wrong or is undecided.' },
 };
 
-export const DocumentEditSourceSchema = z.enum(['user', 'coordinator']);
+export const DocumentEditSourceSchema = z.enum([
+  'user',
+  'coordinator',
+  'agent',
+]);
 
 export const PlanSectionSchema = z.strictObject({
   lines: z.array(z.string().min(1).max(500)),

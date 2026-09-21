@@ -6,7 +6,12 @@ import {
 } from '@harness/runtime-claude';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { recoverToolCalls } from './tool-calls.js';
-import { LOCAL_AGENT_TOOLS, sdkInput, type ToolDefinition } from './tools.js';
+import {
+  LOCAL_AGENT_TOOLS,
+  planTools,
+  sdkInput,
+  type ToolDefinition,
+} from './tools.js';
 
 // Runs one task on any OpenAI-compatible chat endpoint (Ollama locally,
 // Groq, Gemini, OpenRouter…) with our own tool loop, and hands the service
@@ -161,7 +166,10 @@ export function runOpenAiTask(
   options: OpenAiRuntimeOptions,
 ): LiveTask {
   const abortController = new AbortController();
-  const tools = options.tools ?? LOCAL_AGENT_TOOLS;
+  const tools = [
+    ...(options.tools ?? LOCAL_AGENT_TOOLS),
+    ...(input.documents ? planTools(input.documents) : []),
+  ];
   const maxTurns = options.maxTurns ?? 30;
   let stopped = false;
 
@@ -180,6 +188,7 @@ export function runOpenAiTask(
   const readPaths = new Set<string>();
   let changedFiles = 0;
   let commandsRun = 0;
+  let planEdits = 0;
   let nudges = 0;
 
   const done = (async () => {
@@ -218,7 +227,8 @@ export function runOpenAiTask(
         if (text && calls.length > 0 && !emit([{ kind: 'say', body: text }]))
           return;
         if (calls.length === 0 && nudges < 2) {
-          const nothingHappened = changedFiles === 0 && commandsRun === 0;
+          const nothingHappened =
+            changedFiles === 0 && commandsRun === 0 && planEdits === 0;
           const promisedMore = PROMISES_MORE.test(text);
           if (nothingHappened || promisedMore) {
             // The model drifted into prose (nothing changed and nothing
@@ -281,6 +291,13 @@ export function runOpenAiTask(
                 readPaths.add(args.path);
               }
               if (tool.sdkName === 'Bash') commandsRun += 1;
+              if (
+                tool.sdkName === 'Plan' &&
+                tool.name === 'update_plan_section' &&
+                !result.isError
+              ) {
+                planEdits += 1;
+              }
               if (
                 (tool.sdkName === 'Edit' || tool.sdkName === 'Write') &&
                 !result.isError
@@ -378,6 +395,21 @@ function intentsFor(
             tool.sdkName === 'Read'
               ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
               : `${lines} ${lines === 1 ? 'match' : 'matches'}`,
+        },
+      ];
+    }
+    case 'Plan': {
+      if (result.isError) return [];
+      const section =
+        typeof args.section === 'string'
+          ? args.section.toLowerCase()
+          : undefined;
+      return [
+        {
+          kind: 'activity',
+          tool: 'Plan',
+          target: section ? `Plan · ${section}` : 'Plan',
+          summary: section ? 'updated' : 'read',
         },
       ];
     }

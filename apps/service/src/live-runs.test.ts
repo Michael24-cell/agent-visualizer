@@ -486,4 +486,36 @@ describe('live runs', () => {
       .messages.map((m) => m.body);
     expect(bodies.filter((b) => b === 'Trusted run finished.')).toHaveLength(1);
   });
+
+  it('offers the Plan document to the run and records agent edits with the agent as source', async () => {
+    let seen: { id: string; lines: string[] }[] = [];
+    let reply = '';
+    const frames: FrameSource = async function* (input) {
+      seen = input.documents!.readPlan().sections;
+      reply = await input.documents!.updatePlanSection('features', [
+        'Hello script',
+        'Notes file',
+      ]);
+      yield success('Plan noted.');
+    };
+    const { root, service } = setup(frames);
+    const ids = createProject(service, root);
+    startWork(service, ids, 'Update the plan');
+    await service.whenIdle();
+    expect(seen.map((s) => s.id)).toEqual([
+      'overview',
+      'features',
+      'ui',
+      'visual',
+      'data',
+      'risks',
+    ]);
+    expect(reply).toBe('Plan · Features now has 2 lines.');
+    const project = service.getProject(ids.projectId as never);
+    expect(project.projection.planDocument.sections.features).toMatchObject({
+      lines: ['Hello script', 'Notes file'],
+      source: 'agent',
+    });
+    expect(Object.values(project.projection.tasks)[0]!.state).toBe('done');
+  });
 });

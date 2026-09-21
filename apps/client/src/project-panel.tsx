@@ -23,7 +23,11 @@ import {
 } from './api';
 import { ArtifactsView } from './artifacts';
 import { DocumentSection } from './document-section';
-import { documentChanges, type DocumentChange } from './project-notes';
+import {
+  documentChanges,
+  editorLabel,
+  type DocumentChange,
+} from './project-notes';
 export type DetailItem =
   'brief' | 'method' | 'plan' | 'agents' | 'artifacts' | 'history';
 import { workLabels } from './live';
@@ -310,7 +314,7 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
                   lines={resolved(sectionId)}
                   meta={
                     override
-                      ? `${override.source === 'coordinator' ? 'coordinator' : 'you'} · #${override.recordedAtSequence}`
+                      ? `${editorLabel(override.source)} · #${override.recordedAtSequence}`
                       : 'from catalog'
                   }
                   example={example}
@@ -410,7 +414,7 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
               lines={section?.lines ?? []}
               meta={
                 section
-                  ? `${section.source === 'coordinator' ? 'coordinator' : 'you'} · #${section.updatedAtSequence}`
+                  ? `${editorLabel(section.source)} · #${section.updatedAtSequence}`
                   : 'empty'
               }
               example={`${PLAN_SECTIONS[sectionId].title}: …`}
@@ -530,9 +534,7 @@ function DocumentChanges({
             }
           >
             <span className="doc-change-section">{change.section}</span>
-            <span className="doc-change-who">
-              {change.source === 'coordinator' ? 'coordinator' : 'you'}
-            </span>
+            <span className="doc-change-who">{editorLabel(change.source)}</span>
             <span className="doc-change-delta">
               {change.added.length ? `+${change.added.length}` : ''}
               {change.added.length && change.removed.length ? ' ' : ''}
