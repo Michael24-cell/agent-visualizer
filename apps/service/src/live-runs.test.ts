@@ -387,7 +387,7 @@ describe('live runs', () => {
     service.stopAll();
   });
 
-  it('starts the run when the task comes from a deferred reply, as in the app', async () => {
+  it('handles a live agent message at once even when simulated replies are deferred', async () => {
     const frames: FrameSource = async function* () {
       yield text('on it');
       yield success('done');
@@ -405,9 +405,9 @@ describe('live runs', () => {
     });
     const ids = createProject(service, root);
     const sent = startWork(service, ids, 'Deferred task');
-    // The user's message lands at once; the task and the run follow.
-    expect(sent.receipt.createdIds.tasks).toBeUndefined();
-    await service.whenIdle();
+    // The task is created in the same command; no typing delay for a
+    // live agent thread.
+    expect(sent.receipt.createdIds.tasks).toHaveLength(1);
     await service.whenIdle();
     const project = service.getProject(ids.projectId as never);
     const task = Object.values(project.projection.tasks)[0]!;
@@ -611,5 +611,104 @@ describe('live runs', () => {
     expect(bodies.at(-1)).toEqual(['user', 'Also add a test.']);
     finish();
     await service.whenIdle();
+  });
+
+  it('trust policy: once per task needs one approval; commands-only skips file asks', async () => {
+    const decisions: string[] = [];
+    const frames: FrameSource = async function* (_input, options) {
+      const opts = (id: string) => ({
+        signal: options.abortController.signal,
+        toolUseID: id,
+        requestId: id,
+      });
+      decisions.push(
+        (await options.canUseTool('Write', { file_path: 'a.ts' }, opts('a')))
+          ?.behavior ?? 'none',
+      );
+      decisions.push(
+        (await options.canUseTool('Bash', { command: 'npm test' }, opts('b')))
+          ?.behavior ?? 'none',
+      );
+      decisions.push(
+        (await options.canUseTool('Write', { file_path: 'b.ts' }, opts('c')))
+          ?.behavior ?? 'none',
+      );
+      yield success('ok');
+    };
+    const { root, service } = setup(frames);
+    const ids = createProject(service, root);
+    let project = service.getProject(ids.projectId as never);
+    service.setTrust(ids.projectId as never, {
+      commandId: commandId(),
+      expectedSequence: project.projection.lastSequence,
+      trust: 'task',
+    });
+    startWork(service, ids, 'Once per task');
+    for (
+      let i = 0;
+      i < 10 &&
+      Object.keys(service.getProject(ids.projectId as never).projection.asks)
+        .length === 0;
+      i += 1
+    ) {
+      await tick();
+    }
+    project = service.getProject(ids.projectId as never);
+    const ask = Object.values(project.projection.asks)[0]!;
+    service.decideAsk(ids.projectId as never, ids.agentId as never, ask.id, {
+      commandId: commandId(),
+      expectedSequence: project.projection.agents[ids.agentId]!.lastSequence,
+      decision: 'approved',
+      trust: 'once',
+    });
+    await service.whenIdle();
+    expect(decisions).toEqual(['allow', 'allow', 'allow']);
+    expect(
+      Object.keys(service.getProject(ids.projectId as never).projection.asks),
+    ).toHaveLength(1);
+
+    // Commands only: the Write goes ahead, Bash asks, the next Write too.
+    decisions.length = 0;
+    project = service.getProject(ids.projectId as never);
+    service.setTrust(ids.projectId as never, {
+      commandId: commandId(),
+      expectedSequence: project.projection.lastSequence,
+      trust: 'commands',
+    });
+    startWork(service, ids, 'Commands only');
+    for (
+      let i = 0;
+      i < 10 &&
+      Object.values(
+        service.getProject(ids.projectId as never).projection.asks,
+      ).filter((a) => a.state === 'open').length === 0;
+      i += 1
+    ) {
+      await tick();
+    }
+    project = service.getProject(ids.projectId as never);
+    const bashAsk = Object.values(project.projection.asks).find(
+      (a) => a.state === 'open',
+    )!;
+    expect(bashAsk.action).toBe('Run Bash');
+    expect(decisions).toEqual(['allow']);
+    service.decideAsk(
+      ids.projectId as never,
+      ids.agentId as never,
+      bashAsk.id,
+      {
+        commandId: commandId(),
+        expectedSequence: project.projection.agents[ids.agentId]!.lastSequence,
+        decision: 'approved',
+        trust: 'once',
+      },
+    );
+    await service.whenIdle();
+    expect(decisions).toEqual(['allow', 'allow', 'allow']);
+    const task = Object.values(
+      service.getProject(ids.projectId as never).projection.tasks,
+    ).find((t) => t.title === 'Commands only')!;
+    expect(task.state).toBe('done');
+    expect(task.startedAt).toBeDefined();
   });
 });

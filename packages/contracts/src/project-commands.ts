@@ -19,6 +19,7 @@ import {
   MethodSectionIdSchema,
   PlanSectionIdSchema,
   ProjectSchema,
+  TrustPolicySchema,
 } from './project.js';
 
 // Every mutating command carries a client-generated commandId (for
@@ -61,6 +62,12 @@ export const CreateAgentCommandSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
   category: CapabilityCategorySchema,
   model: AgentModelSchema.optional(),
+});
+
+// Targets the project; expectedSequence is the project's lastSequence.
+export const SetTrustCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  trust: TrustPolicySchema,
 });
 
 // Targets an agent; expectedSequence is that agent's lastSequence.
@@ -273,6 +280,7 @@ export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
 export type RenameAgentCommand = z.infer<typeof RenameAgentCommandSchema>;
+export type SetTrustCommand = z.infer<typeof SetTrustCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;

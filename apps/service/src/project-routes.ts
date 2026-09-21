@@ -28,6 +28,7 @@ import {
   ProposalDecisionCommandSchema,
   ProposalIdSchema,
   RenameAgentCommandSchema,
+  SetTrustCommandSchema,
   SetAgentModelCommandSchema,
 } from '@harness/contracts';
 import { METHOD_CATALOG } from '@harness/runtime-simulated';
@@ -366,6 +367,19 @@ export function registerProjectRoutes(
       return CommandResponseSchema.parse(result.value);
     },
   );
+
+  service.post('/api/projects/:projectId/trust', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    const command = SetTrustCommandSchema.safeParse(request.body);
+    if (!params.success || !command.success) {
+      return reply.code(400).send(invalid('trust command'));
+    }
+    const result = handle(() =>
+      projects.setTrust(params.data.projectId, command.data),
+    );
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return CommandResponseSchema.parse(result.value);
+  });
 
   service.post(
     '/api/projects/:projectId/agents/:agentId/name',

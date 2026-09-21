@@ -5,7 +5,13 @@ import {
   createAgent,
   listProjects,
   readProject,
+  setTrust,
 } from './api';
+import {
+  TRUST_POLICIES,
+  TrustPolicySchema,
+  projectTrust,
+} from '@harness/contracts';
 import { FolderPicker } from './folder-picker';
 import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
 import { LivePane } from './live-pane';
@@ -108,6 +114,7 @@ export function Workspace({
     }
   };
 
+  const trust = projectTrust(project.projection.project);
   const targets = liveTargets(project);
   const openTargets = open
     .map((id) => targets.find((t) => liveTargetId(t) === id))
@@ -265,6 +272,38 @@ export function Workspace({
               onCancel={() => setPicking(false)}
             />
           ) : null}
+          <label className="ws-trust" title={TRUST_POLICIES[trust].note}>
+            <span>Asks</span>
+            <select
+              value={trust}
+              aria-label="How often agents ask before acting"
+              onChange={(event) => {
+                const next = TrustPolicySchema.parse(event.target.value);
+                void setTrust(
+                  project.projection.projectId,
+                  project.projection.lastSequence,
+                  next,
+                )
+                  .then((result) => {
+                    updateProject(result.project);
+                    onNotice(`${TRUST_POLICIES[next].label}.`);
+                  })
+                  .catch((error: unknown) =>
+                    onError(
+                      error instanceof Error
+                        ? error.message
+                        : 'The setting was not saved.',
+                    ),
+                  );
+              }}
+            >
+              {TrustPolicySchema.options.map((policy) => (
+                <option key={policy} value={policy}>
+                  {TRUST_POLICIES[policy].label}
+                </option>
+              ))}
+            </select>
+          </label>
           <h2 className="ws-side-title">Conversations</h2>
           <ul className="ws-list">
             {targets.map((target) => {

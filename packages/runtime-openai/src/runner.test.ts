@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import type { LiveTaskSink } from '@harness/runtime-claude';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runOpenAiTask } from './runner.js';
+import { retryAfterMs, runOpenAiTask } from './runner.js';
 import { LOCAL_AGENT_TOOLS_FULL } from './tools.js';
 import { insideFolder } from './tools.js';
 
@@ -642,5 +642,49 @@ describe('follow-ups', () => {
     });
     expect(second.at(-2)).toMatchObject({ role: 'tool' });
     expect(run.send!('too late')).toBe(false);
+  });
+});
+
+describe('rate limits', () => {
+  it('waits out a 429 and retries instead of failing the task', async () => {
+    const cwd = project();
+    const waits: number[] = [];
+    let calls = 0;
+    const fetchFn: typeof fetch = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            error: { message: 'Rate limit reached. Please try again in 1.5s.' },
+          }),
+          { status: 429 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Done.' } }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }).done;
+    expect(waits).toEqual([1500]);
+    expect(seen.batches.at(-1)).toEqual([{ kind: 'finish', reason: 'Done.' }]);
+  });
+
+  it('reads Retry-After and body hints, with sane bounds', () => {
+    expect(retryAfterMs('7', '')).toBe(7000);
+    expect(retryAfterMs(null, 'try again in 250ms')).toBe(500);
+    expect(retryAfterMs(null, 'Please try again in 2m.')).toBe(90_000);
+    expect(retryAfterMs(null, 'nothing useful')).toBe(60_000);
   });
 });

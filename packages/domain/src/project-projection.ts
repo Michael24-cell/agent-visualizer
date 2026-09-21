@@ -359,6 +359,17 @@ export function applyProjectEvent(
     case 'project.created':
       throw new ProjectionError('duplicate_entity', 'Project already exists.');
 
+    case 'project.trust_changed': {
+      if ((next.project.trust ?? 'ask') === event.payload.trust) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Trust is already ${event.payload.trust}.`,
+        );
+      }
+      next.project = { ...next.project, trust: event.payload.trust };
+      break;
+    }
+
     case 'project.repository_attached': {
       // Re-attaching is allowed (the user moved or renamed the folder); the
       // event history keeps every attachment.
@@ -941,7 +952,10 @@ export function applyProjectEvent(
           );
         }
       }
-      next.tasks[task.id] = task;
+      next.tasks[task.id] =
+        task.state === 'working' && !task.startedAt
+          ? { ...task, startedAt: event.occurredAt }
+          : task;
       next.agents[agent.id] = {
         ...agent,
         currentTaskId: task.id,
@@ -992,6 +1006,9 @@ export function applyProjectEvent(
       next.tasks[task.id] = {
         ...task,
         state: to,
+        ...(to === 'working' && !task.startedAt
+          ? { startedAt: event.occurredAt }
+          : {}),
         ...(isTerminalTaskState(to)
           ? { endedAtSequence: sequence, endReason: reason }
           : {}),

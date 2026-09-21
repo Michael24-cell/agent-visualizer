@@ -274,6 +274,56 @@ function AgentName({
   );
 }
 
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// The most recent tool row of a task, as "Read notes.md".
+function lastToolLabel(
+  project: ProjectResponse,
+  agentId: string,
+  taskId: string,
+): string | undefined {
+  const rows = toolRows(project, agentId).filter((row) =>
+    row.kind === 'activity'
+      ? row.activity.taskId === taskId
+      : row.kind === 'check'
+        ? row.check.taskId === taskId
+        : row.output.taskId === taskId,
+  );
+  const last = rows.sort((a, b) => b.sequence - a.sequence)[0];
+  if (!last) return undefined;
+  if (last.kind === 'activity')
+    return `${last.activity.tool} ${last.activity.target}`;
+  if (last.kind === 'check') return `Bash ${last.check.command}`;
+  return `Write ${last.output.title}`;
+}
+
+// A user message posted while the agent's task was running (and not the
+// one that started it) was handed into that task.
+function forwardedTaskTitle(
+  project: ProjectResponse,
+  agentId: string,
+  message: Message,
+): string | undefined {
+  for (const task of Object.values(project.projection.tasks)) {
+    if (task.agentId !== agentId) continue;
+    if (task.originMessageId === message.id) continue;
+    const started = task.createdAtSequence;
+    const ended = task.endedAtSequence ?? Number.POSITIVE_INFINITY;
+    if (message.sequence > started && message.sequence < ended) {
+      return task.title.length > 40
+        ? `${task.title.slice(0, 39)}…`
+        : task.title;
+    }
+  }
+  return undefined;
+}
+
 function diffSummary(diff: string): string {
   if (diff.startsWith('(diff too large')) return diff;
   let added = 0;
@@ -459,6 +509,16 @@ export function LivePane({
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dismissedFailure, setDismissedFailure] = useState<string>();
+  const [now, setNow] = useState(() => Date.now());
+  const agentWorking =
+    target.kind === 'agent' && target.agent.work === 'working';
+
+  // A clock for the elapsed time while the agent works.
+  useEffect(() => {
+    if (!agentWorking) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [agentWorking]);
   const [value, setValue] = useState('');
   const [feedback, setFeedback] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -500,15 +560,34 @@ export function LivePane({
     newestRef.current = messages.at(-1)?.sequence ?? 0;
   }, [messages]);
 
-  const appendNewer = async () => {
-    const page = await readMessages(projectId, threadRef, {
+  // One fetch at a time, and never the same message twice: the poll and
+  // the "thread moved" effect can both ask for newer messages at once.
+  const appendingRef = useRef<Promise<number> | undefined>(undefined);
+  const appendNewer = (): Promise<number> => {
+    if (appendingRef.current) return appendingRef.current;
+    const work = readMessages(projectId, threadRef, {
       after: newestRef.current,
       limit: 100,
-    });
-    if (page.messages.length) {
-      setMessages((current) => [...current, ...page.messages]);
-    }
-    return page.messages.length;
+    })
+      .then((page) => {
+        if (page.messages.length) {
+          newestRef.current = Math.max(
+            newestRef.current,
+            page.messages.at(-1)!.sequence,
+          );
+          setMessages((current) => {
+            const known = new Set(current.map((message) => message.id));
+            const fresh = page.messages.filter((m) => !known.has(m.id));
+            return fresh.length ? [...current, ...fresh] : current;
+          });
+        }
+        return page.messages.length;
+      })
+      .finally(() => {
+        appendingRef.current = undefined;
+      });
+    appendingRef.current = work;
+    return work;
   };
 
   // The thread moved (a refresh, another pane, the model finishing while
@@ -644,6 +723,14 @@ export function LivePane({
       : undefined;
   const canStop =
     work !== undefined && ['waiting', 'working', 'needs_you'].includes(work);
+  const elapsed =
+    currentTask?.state === 'working' && currentTask.startedAt
+      ? formatElapsed(now - Date.parse(currentTask.startedAt))
+      : undefined;
+  const lastTool =
+    target.kind === 'agent' && currentTask?.state === 'working'
+      ? lastToolLabel(project, target.agent.id, currentTask.id)
+      : undefined;
   const openAsk =
     target.kind === 'agent' && currentTask
       ? Object.values(project.projection.asks).find(
@@ -790,7 +877,11 @@ export function LivePane({
           </label>
         ) : null}
         {work ? (
-          <span className={`pane-state work-${work}`}>{workLabels[work]}</span>
+          <span className={`pane-state work-${work}`}>
+            {workLabels[work]}
+            {work === 'working' && elapsed ? ` · ${elapsed}` : ''}
+            {work === 'working' && lastTool ? ` · ${lastTool}` : ''}
+          </span>
         ) : null}
         {work === 'working' && project.runtime.mode !== 'live' ? (
           <button
@@ -870,12 +961,21 @@ export function LivePane({
               }
             }
             const mine = message.author.role === 'user';
+            const forwardedTo =
+              mine && target.kind === 'agent'
+                ? forwardedTaskTitle(project, target.agent.id, message)
+                : undefined;
             return (
               <li
                 key={message.id}
                 className={`msg ${mine ? 'msg-user' : 'msg-reply'} role-${message.author.role}`}
               >
                 {label ? <span className="msg-from">{label}</span> : null}
+                {forwardedTo ? (
+                  <span className="msg-forwarded">
+                    handed to {title} · {forwardedTo}
+                  </span>
+                ) : null}
                 {mine || message.author.role === 'system' ? (
                   <p>{message.body}</p>
                 ) : (

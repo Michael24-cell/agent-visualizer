@@ -13,6 +13,7 @@ import {
   ProjectFileSchema,
   type RuntimeSettings,
   type RuntimeUpdate,
+  type TrustPolicy,
   RuntimeSettingsSchema,
   type CommandResponse,
   type FolderListing,
@@ -193,6 +194,25 @@ export async function createAgent(
           expectedSequence,
           name,
           category,
+        }),
+      })
+    ).json(),
+  );
+}
+
+export async function setTrust(
+  projectId: string,
+  expectedSequence: number,
+  trust: TrustPolicy,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/trust`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          trust,
         }),
       })
     ).json(),

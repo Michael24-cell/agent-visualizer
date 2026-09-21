@@ -21,6 +21,7 @@ import {
   ThreadIdSchema,
   agentModel,
   modelForTier,
+  projectTrust,
   type AdapterProvenanceSchema,
   type Agent,
   type AgentId,
@@ -43,6 +44,7 @@ import {
   type PlanSectionCommand,
   type ProjectFile,
   type RenameAgentCommand,
+  type SetTrustCommand,
   type PostMessageCommand,
   type ProjectEvent,
   type ProjectId,
@@ -616,8 +618,22 @@ export class ProjectService {
         return Promise.resolve('denied');
       }
       // An earlier approval trusted the rest of this task: no card, the
-      // tool's own check or output row records what ran.
+      // tool's own check or output row records what ran. The project's
+      // trust policy can grant the same: once per task, or for anything
+      // that is not a shell command.
       if (liveTask.trusted) return Promise.resolve('approved');
+      const policy = projectTrust(current.project);
+      if (
+        policy === 'task' &&
+        Object.values(current.asks).some(
+          (ask) => ask.taskId === task.id && ask.state === 'approved',
+        )
+      ) {
+        return Promise.resolve('approved');
+      }
+      if (policy === 'commands' && !intent.action.startsWith('Run Bash')) {
+        return Promise.resolve('approved');
+      }
       const batch = new ProjectBatch(
         this.store,
         projectId,
@@ -976,6 +992,30 @@ export class ProjectService {
     return batch.commit();
   }
 
+  setTrust(projectId: ProjectId, command: SetTrustCommand): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      this.assertSequence(
+        'Project',
+        projection.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        'project.trust_changed',
+        { trust: command.trust },
+        { source: 'user' },
+      );
+      return batch.commit();
+    });
+  }
+
   renameAgent(
     projectId: ProjectId,
     agentId: AgentId,
@@ -1145,9 +1185,17 @@ export class ProjectService {
         command.body,
         command.intent,
       );
-      if (this.replies.mode === 'inline') {
+      // Simulated replies are deferred so panes show typing; a live agent
+      // thread has nothing to type — its message is a task or a forward,
+      // and both must happen now, before the run moves on.
+      const inline =
+        this.replies.mode === 'inline' ||
+        (this.isLive && thread.kind === 'agent');
+      if (inline) {
         this.buildReply(batch, projectId, thread, command, messageId);
-        return batch.commit();
+        const committed = batch.commit();
+        if (this.isLive) this.reconcileLiveRuns(projectId);
+        return committed;
       }
       const committed = batch.commit();
       this.scheduleReply(projectId, thread, command, messageId);

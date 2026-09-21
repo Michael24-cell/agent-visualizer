@@ -36,12 +36,35 @@ export const RepositoryRefSchema = z.strictObject({
   attachedAt: z.iso.datetime(),
 });
 
+// How much a project asks before agents act: every time, once per task
+// (the first approval covers the rest), or only for shell commands.
+export const TrustPolicySchema = z.enum(['ask', 'task', 'commands']);
+
+export const TRUST_POLICIES: Readonly<
+  Record<z.infer<typeof TrustPolicySchema>, { label: string; note: string }>
+> = {
+  ask: {
+    label: 'Ask every time',
+    note: 'Every command and file change waits for you.',
+  },
+  task: {
+    label: 'Ask once per task',
+    note: 'The first approval in a task covers the rest of it.',
+  },
+  commands: {
+    label: 'Ask for commands only',
+    note: 'File changes go ahead; shell commands still wait for you.',
+  },
+};
+
 export const ProjectSchema = z.strictObject({
   id: ProjectIdSchema,
   name: z.string().min(1).max(120),
   origin: ProjectOriginSchema,
   createdAt: z.iso.datetime(),
   repository: RepositoryRefSchema.optional(),
+  // Absent on projects recorded before the setting existed: 'ask'.
+  trust: TrustPolicySchema.optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -357,6 +380,8 @@ export const AgentTaskSchema = z
     requiredChecks: z.array(z.string().min(1)),
     modelTier: ModelTierSchema.optional(),
     state: AgentTaskStateSchema,
+    // When work on it began (first move to working), for elapsed time.
+    startedAt: z.iso.datetime().optional(),
     // Set when an approval was given for the rest of the task: later
     // permission requests run without asking and are logged as activity.
     trusted: z.boolean().optional(),
@@ -630,6 +655,13 @@ export type BriefFieldState = z.infer<typeof BriefFieldStateSchema>;
 export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
 export type Activity = z.infer<typeof ActivitySchema>;
+export type TrustPolicy = z.infer<typeof TrustPolicySchema>;
+
+export function projectTrust(project: {
+  trust?: TrustPolicy | undefined;
+}): TrustPolicy {
+  return project.trust ?? 'ask';
+}
 export type ActivityTool = z.infer<typeof ActivityToolSchema>;
 export type PlanSectionId = z.infer<typeof PlanSectionIdSchema>;
 export type PlanSection = z.infer<typeof PlanSectionSchema>;

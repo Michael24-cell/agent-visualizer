@@ -42,6 +42,7 @@ import {
   ProposalStateSchema,
   RepositoryRefSchema,
   ThreadSchema,
+  TrustPolicySchema,
 } from './project.js';
 
 // Who caused the event. Matches the product vocabulary rather than the
@@ -88,6 +89,10 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
   projectEvent(
     'project.repository_attached',
     z.strictObject({ repository: RepositoryRefSchema }),
+  ),
+  projectEvent(
+    'project.trust_changed',
+    z.strictObject({ trust: TrustPolicySchema }),
   ),
 
   projectEvent('thread.opened', z.strictObject({ thread: ThreadSchema })),

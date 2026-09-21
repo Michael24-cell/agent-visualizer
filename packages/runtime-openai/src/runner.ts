@@ -29,6 +29,7 @@ export interface OpenAiRuntimeOptions {
   readonly turnTimeoutMs?: number | undefined;
   // Injectable for tests; defaults to global fetch.
   readonly fetch?: typeof fetch | undefined;
+  readonly sleep?: ((ms: number) => Promise<void>) | undefined;
   readonly tools?: readonly ToolDefinition[] | undefined;
 }
 
@@ -102,11 +103,34 @@ function parseArguments(raw: string): Record<string, unknown> {
   }
 }
 
+const RATE_LIMIT_RETRIES = 2;
+const defaultSleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// How long a 429 asks us to wait: the Retry-After header, or "try again
+// in 7.5s" / "in 250ms" from the body, capped at 90 seconds.
+export function retryAfterMs(header: string | null, body: string): number {
+  const fromHeader = header ? Number(header) : Number.NaN;
+  if (Number.isFinite(fromHeader) && fromHeader > 0) {
+    return Math.min(fromHeader * 1000, 90_000);
+  }
+  const match = /try again in\s*([\d.]+)\s*(ms|s|m)\b/i.exec(body);
+  if (match) {
+    const amount = Number(match[1]);
+    const unit = match[2]!.toLowerCase();
+    const ms =
+      unit === 'ms' ? amount : unit === 'm' ? amount * 60_000 : amount * 1000;
+    return Math.min(Math.max(ms, 500), 90_000);
+  }
+  return 60_000;
+}
+
 async function complete(
   options: OpenAiRuntimeOptions,
   messages: readonly ChatMessage[],
   tools: readonly ToolDefinition[],
   signal: AbortSignal,
+  attempt = 0,
 ): Promise<ChatCompletion['choices'][number]['message']> {
   const doFetch = options.fetch ?? fetch;
   const timeoutMs = options.turnTimeoutMs ?? 180_000;
@@ -147,6 +171,14 @@ async function complete(
     }
     throw error;
   });
+  if (response.status === 429 && attempt < RATE_LIMIT_RETRIES) {
+    // Free tiers meter tokens per minute. Wait out the window the server
+    // names (or a minute) and try again rather than failing the task.
+    const body = await response.text().catch(() => '');
+    const wait = retryAfterMs(response.headers.get('retry-after'), body);
+    await (options.sleep ?? defaultSleep)(wait);
+    return complete(options, messages, tools, signal, attempt + 1);
+  }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(
