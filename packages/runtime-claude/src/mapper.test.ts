@@ -131,7 +131,7 @@ describe('ClaudeMessageMapper', () => {
     ]);
   });
 
-  it('keeps read-only tools, failed writes and subagent frames out of history', () => {
+  it('records reads as activity, keeps failed writes and subagent frames out of history', () => {
     const mapper = new ClaudeMessageMapper();
     mapper.map(
       assistant([
@@ -144,7 +144,9 @@ describe('ClaudeMessageMapper', () => {
         },
       ]),
     );
-    expect(mapper.map(toolResult('r1', 'contents'))).toEqual([]);
+    expect(mapper.map(toolResult('r1', 'contents'))).toEqual([
+      { kind: 'activity', tool: 'Read', target: 'x', summary: '1 line' },
+    ]);
     expect(mapper.map(toolResult('w1', 'EACCES', true))).toEqual([]);
     expect(
       mapper.map(assistant([{ type: 'text', text: 'inner' }], 'task-1')),
@@ -159,7 +161,17 @@ describe('ClaudeMessageMapper', () => {
   it('finishes on a successful result and fails on an error result', () => {
     const ok = new ClaudeMessageMapper();
     expect(ok.map(success('Done: added the endpoint.'))).toEqual([
-      { kind: 'finish', reason: 'Done: added the endpoint.' },
+      {
+        kind: 'finish',
+        reason: 'Done: added the endpoint.',
+        alreadySaid: false,
+      },
+    ]);
+    // When the result repeats the last text, the service does not post it twice.
+    const echoed = new ClaudeMessageMapper();
+    echoed.map(assistant([{ type: 'text', text: 'All done.' }]));
+    expect(echoed.map(success('All done.'))).toEqual([
+      { kind: 'finish', reason: 'All done.', alreadySaid: true },
     ]);
     expect(ok.isFinished).toBe(true);
 

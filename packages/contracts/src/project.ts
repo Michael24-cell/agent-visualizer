@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CapabilityCategorySchema } from './experience.js';
 import { ProjectIdSchema, TaskIdSchema } from './ids.js';
 import {
+  ActivityIdSchema,
   AgentIdSchema,
   AskIdSchema,
   BriefRequestIdSchema,
@@ -344,6 +345,9 @@ export const AgentTaskSchema = z
     requiredChecks: z.array(z.string().min(1)),
     modelTier: ModelTierSchema.optional(),
     state: AgentTaskStateSchema,
+    // Set when an approval was given for the rest of the task: later
+    // permission requests run without asking and are logged as activity.
+    trusted: z.boolean().optional(),
     methodSnapshotId: MethodSnapshotIdSchema.optional(),
     originMessageId: MessageIdSchema.optional(),
     createdAtSequence: SequenceSchema,
@@ -392,6 +396,22 @@ export const CheckSchema = z.strictObject({
   retryOf: CheckIdSchema.optional(),
   startedAtSequence: SequenceSchema,
   finishedAtSequence: SequenceSchema.optional(),
+});
+
+// One tool use worth showing in the conversation but not worth an
+// entity of its own: reads, searches, listings. Commands become checks
+// and file changes become outputs.
+export const ActivityToolSchema = z.enum(['Read', 'Grep', 'Glob', 'Other']);
+
+export const ActivitySchema = z.strictObject({
+  id: ActivityIdSchema,
+  projectId: ProjectIdSchema,
+  agentId: AgentIdSchema,
+  taskId: TaskIdSchema,
+  tool: ActivityToolSchema,
+  target: z.string().min(1).max(300),
+  summary: z.string().min(1).max(300).optional(),
+  atSequence: SequenceSchema,
 });
 
 export const OutputKindSchema = z.enum([
@@ -584,6 +604,8 @@ export type BriefFieldId = z.infer<typeof BriefFieldIdSchema>;
 export type BriefFieldState = z.infer<typeof BriefFieldStateSchema>;
 export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
+export type Activity = z.infer<typeof ActivitySchema>;
+export type ActivityTool = z.infer<typeof ActivityToolSchema>;
 export type PlanSectionId = z.infer<typeof PlanSectionIdSchema>;
 export type PlanSection = z.infer<typeof PlanSectionSchema>;
 export type PlanDocument = z.infer<typeof PlanDocumentSchema>;

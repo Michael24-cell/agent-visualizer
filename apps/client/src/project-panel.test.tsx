@@ -74,6 +74,7 @@ function project(
       asks: {},
       checks: {},
       outputs: {},
+      activities: {},
       lastSequence: 4,
       lastEventId: 'event_4',
       appliedEventIds: ['event_1', 'event_2', 'event_3', 'event_4'],

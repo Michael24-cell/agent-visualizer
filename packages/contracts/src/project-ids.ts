@@ -17,6 +17,7 @@ export const PlanIdSchema = prefixed<'PlanId'>('plan');
 export const AskIdSchema = prefixed<'AskId'>('ask');
 export const CheckIdSchema = prefixed<'CheckId'>('check');
 export const OutputIdSchema = prefixed<'OutputId'>('output');
+export const ActivityIdSchema = prefixed<'ActivityId'>('activity');
 export const MethodIdSchema = prefixed<'MethodId'>('method');
 export const MethodSnapshotIdSchema =
   prefixed<'MethodSnapshotId'>('methodsnap');
@@ -31,6 +32,7 @@ export type PlanId = z.infer<typeof PlanIdSchema>;
 export type AskId = z.infer<typeof AskIdSchema>;
 export type CheckId = z.infer<typeof CheckIdSchema>;
 export type OutputId = z.infer<typeof OutputIdSchema>;
+export type ActivityId = z.infer<typeof ActivityIdSchema>;
 export type MethodId = z.infer<typeof MethodIdSchema>;
 export type MethodSnapshotId = z.infer<typeof MethodSnapshotIdSchema>;
 export type BriefRequestId = z.infer<typeof BriefRequestIdSchema>;

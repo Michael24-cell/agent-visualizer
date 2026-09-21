@@ -213,7 +213,10 @@ export function runOpenAiTask(
           content: text || null,
           ...(calls.length ? { tool_calls: calls } : {}),
         });
-        if (text && !emit([{ kind: 'say', body: text }])) return;
+        // The final turn's text becomes the finish message; saying it
+        // first would show it twice.
+        if (text && calls.length > 0 && !emit([{ kind: 'say', body: text }]))
+          return;
         if (calls.length === 0 && nudges < 2) {
           const nothingHappened = changedFiles === 0 && commandsRun === 0;
           const promisedMore = PROMISES_MORE.test(text);
@@ -349,6 +352,33 @@ function intentsFor(
         result.isError
           ? { kind: 'check_fail', name, command, summary }
           : { kind: 'check_pass', name, command, summary },
+      ];
+    }
+    case 'Read':
+    case 'Grep':
+    case 'Glob': {
+      if (result.isError) return [];
+      const lines = result.text
+        .split('\n')
+        .filter((line) => line.trim().length > 0).length;
+      const target =
+        tool.sdkName === 'Read'
+          ? typeof args.path === 'string'
+            ? args.path
+            : 'file'
+          : [args.pattern, args.glob ?? args.path]
+              .filter((v): v is string => typeof v === 'string' && v.length > 0)
+              .join(' in ') || tool.sdkName;
+      return [
+        {
+          kind: 'activity',
+          tool: tool.sdkName,
+          target: clip(target, TITLE_MAX * 2),
+          summary:
+            tool.sdkName === 'Read'
+              ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
+              : `${lines} ${lines === 1 ? 'match' : 'matches'}`,
+        },
       ];
     }
     case 'Edit':

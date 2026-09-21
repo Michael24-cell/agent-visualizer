@@ -16,6 +16,7 @@ import {
   ThreadIdSchema,
 } from './project-ids.js';
 import {
+  ActivitySchema,
   AdapterProvenanceSchema,
   AgentModelSchema,
   AgentSchema,
@@ -192,6 +193,8 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
       from: z.literal('open'),
       to: AskStateSchema.exclude(['open']),
       note: z.string().min(1).optional(),
+      // 'task': this approval also covers every later ask in the task.
+      trust: z.enum(['once', 'task']).optional(),
     }),
   ),
 
@@ -206,6 +209,7 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
     }),
   ),
   projectEvent('output.produced', z.strictObject({ output: OutputSchema })),
+  projectEvent('task.tool_used', z.strictObject({ activity: ActivitySchema })),
 
   projectEvent('proposal.opened', z.strictObject({ proposal: ProposalSchema })),
   projectEvent(

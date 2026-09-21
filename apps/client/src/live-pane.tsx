@@ -9,11 +9,15 @@ import {
   AGENT_MODELS,
   AgentModelSchema,
   agentModel,
+  type Activity,
   type Ask,
+  type Check,
   type Message,
+  type Output,
   type ProjectResponse,
   type Proposal,
 } from '@harness/contracts';
+import { Markdown } from './markdown';
 import {
   ApiError,
   advanceAgent,
@@ -177,7 +181,7 @@ function AskCard({
 }: {
   ask: Ask;
   busy: boolean;
-  onDecide: (decision: 'approved' | 'denied') => void;
+  onDecide: (decision: 'approved' | 'denied', trust?: 'once' | 'task') => void;
 }) {
   return (
     <li className="line">
@@ -185,7 +189,7 @@ function AskCard({
         <strong>{ask.action}</strong>
         <p>{ask.reason}</p>
         <p className="ask-scope">
-          Would write to <code>{ask.scope}</code> · {ask.consequences}
+          <code>{ask.scope}</code> · {ask.consequences}
         </p>
         <div className="ask-actions">
           <button
@@ -200,6 +204,15 @@ function AskCard({
             type="button"
             className="secondary-action"
             disabled={busy}
+            title="Approve this and every later action in this task without asking"
+            onClick={() => onDecide('approved', 'task')}
+          >
+            Approve all for this task
+          </button>
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={busy}
             onClick={() => onDecide('denied')}
           >
             Deny
@@ -208,6 +221,105 @@ function AskCard({
       </div>
     </li>
   );
+}
+
+// What an agent did with a tool, as one row in the conversation: reads
+// and searches, commands with their outcome, files written.
+type ToolRow =
+  | { kind: 'activity'; sequence: number; activity: Activity }
+  | { kind: 'check'; sequence: number; check: Check }
+  | { kind: 'output'; sequence: number; output: Output };
+
+function toolRows(project: ProjectResponse, agentId: string): ToolRow[] {
+  const rows: ToolRow[] = [];
+  for (const activity of Object.values(project.projection.activities)) {
+    if (activity.agentId === agentId)
+      rows.push({ kind: 'activity', sequence: activity.atSequence, activity });
+  }
+  for (const check of Object.values(project.projection.checks)) {
+    if (check.agentId === agentId)
+      rows.push({ kind: 'check', sequence: check.startedAtSequence, check });
+  }
+  for (const output of Object.values(project.projection.outputs)) {
+    if (output.agentId === agentId)
+      rows.push({
+        kind: 'output',
+        sequence: output.producedAtSequence,
+        output,
+      });
+  }
+  return rows;
+}
+
+function ToolRowView({ row }: { row: ToolRow }) {
+  const [open, setOpen] = useState(false);
+  switch (row.kind) {
+    case 'activity':
+      return (
+        <li className="tool-row">
+          <span className="tool-dot" aria-hidden="true">
+            ⏺
+          </span>
+          <span className="tool-name">{row.activity.tool}</span>
+          <span className="tool-target">{row.activity.target}</span>
+          {row.activity.summary ? (
+            <span className="tool-note">{row.activity.summary}</span>
+          ) : null}
+        </li>
+      );
+    case 'check': {
+      const check = row.check;
+      const state =
+        check.state === 'running'
+          ? 'running'
+          : check.state === 'passed'
+            ? 'passed'
+            : 'failed';
+      return (
+        <li className={`tool-row tool-${state}`}>
+          <span className="tool-dot" aria-hidden="true">
+            ⏺
+          </span>
+          <span className="tool-name">Bash</span>
+          <span className="tool-target">{check.command}</span>
+          <span className="tool-note">
+            {state === 'running' ? 'running' : state}
+          </span>
+          {check.summary ? (
+            <button
+              type="button"
+              className={`tool-result ${open ? 'is-open' : ''}`}
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+            >
+              <span className="tool-elbow" aria-hidden="true">
+                ⎿
+              </span>
+              <span className="tool-result-text">{check.summary}</span>
+            </button>
+          ) : null}
+        </li>
+      );
+    }
+    default: {
+      const output = row.output;
+      return (
+        <li className="tool-row tool-output">
+          <span className="tool-dot" aria-hidden="true">
+            ⏺
+          </span>
+          <span className="tool-name">
+            {output.kind === 'diff' ? 'Write' : 'Output'}
+          </span>
+          <span className="tool-target">{output.title}</span>
+          {output.digest &&
+          !/^(Wrote|Edited|Edit applied)/.test(output.digest) ? (
+            <span className="tool-note">{output.digest}</span>
+          ) : null}
+        </li>
+      );
+    }
+  }
 }
 
 export function LivePane({
@@ -411,6 +523,23 @@ export function LivePane({
           (ask) => ask.taskId === currentTask.id && ask.state === 'open',
         )
       : undefined;
+  // Messages and tool rows in one stream, ordered by project sequence.
+  // Tool rows before the oldest loaded message stay hidden with it.
+  const oldestLoaded = messages[0]?.sequence ?? 0;
+  const timeline: (
+    { kind: 'message'; sequence: number; message: Message } | ToolRow
+  )[] = [
+    ...messages.map((message) => ({
+      kind: 'message' as const,
+      sequence: message.sequence,
+      message,
+    })),
+    ...(target.kind === 'agent'
+      ? toolRows(project, target.agent.id).filter(
+          (row) => row.sequence >= oldestLoaded,
+        )
+      : []),
+  ].sort((a, b) => a.sequence - b.sequence);
   const openProposals =
     target.kind === 'coordinator'
       ? Object.values(project.projection.proposals)
@@ -430,7 +559,10 @@ export function LivePane({
       'Next step applied.',
     );
   };
-  const decideOpenAsk = (decision: 'approved' | 'denied') => {
+  const decideOpenAsk = (
+    decision: 'approved' | 'denied',
+    trust: 'once' | 'task' = 'once',
+  ) => {
     if (target.kind !== 'agent' || !openAsk) return;
     const agent = target.agent;
     void run(
@@ -441,8 +573,13 @@ export function LivePane({
           openAsk.id,
           agent.lastSequence,
           decision,
+          trust,
         ),
-      decision === 'approved' ? 'Approved.' : 'Denied.',
+      decision === 'denied'
+        ? 'Denied.'
+        : trust === 'task'
+          ? 'Approved — the rest of this task runs without asking.'
+          : 'Approved.',
     );
   };
   const decideOpenProposal = (
@@ -566,15 +703,23 @@ export function LivePane({
           {loaded && messages.length === 0 ? (
             <li className="line line-empty">Nothing yet.</li>
           ) : null}
-          {messages.map((message) => {
+          {timeline.map((entry) => {
+            if (entry.kind !== 'message') {
+              return <ToolRowView key={`tool-${entry.sequence}`} row={entry} />;
+            }
+            const message = entry.message;
             const label = authorLabel(message, target);
-            if (
-              message.refs?.askId &&
-              openAsk &&
-              message.refs.askId === openAsk.id
-            ) {
-              // The ask itself is rendered as a card below, not as prose.
-              return null;
+            if (message.refs?.askId) {
+              // The open ask is a card below; a decided one is told by
+              // the tool row that follows it (or the denial message).
+              const ask = project.projection.asks[message.refs.askId];
+              if (
+                ask &&
+                message.author.role === 'agent' &&
+                message.body.startsWith('Needs you:')
+              ) {
+                return null;
+              }
             }
             const mine = message.author.role === 'user';
             return (
@@ -583,7 +728,13 @@ export function LivePane({
                 className={`msg ${mine ? 'msg-user' : 'msg-reply'} role-${message.author.role}`}
               >
                 {label ? <span className="msg-from">{label}</span> : null}
-                <p>{message.body}</p>
+                {mine || message.author.role === 'system' ? (
+                  <p>{message.body}</p>
+                ) : (
+                  <div className="msg-body">
+                    <Markdown text={message.body} />
+                  </div>
+                )}
               </li>
             );
           })}

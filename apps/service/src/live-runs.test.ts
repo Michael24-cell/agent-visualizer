@@ -194,6 +194,7 @@ describe('live runs', () => {
       commandId: commandId(),
       expectedSequence: agent.lastSequence,
       decision: 'approved',
+      trust: 'once',
     });
     await service.whenIdle();
     project = service.getProject(ids.projectId as never);
@@ -248,6 +249,7 @@ describe('live runs', () => {
       commandId: commandId(),
       expectedSequence: project.projection.agents[ids.agentId]!.lastSequence,
       decision: 'denied',
+      trust: 'once',
     });
     await service.whenIdle();
     expect(permission).toMatchObject({ behavior: 'deny', interrupt: true });
@@ -414,5 +416,74 @@ describe('live runs', () => {
       .listMessages(ids.projectId as never, ids.threadId, { limit: 10 })
       .messages.map((m) => m.body);
     expect(bodies).toContain('on it');
+  });
+
+  it('one approval can trust the rest of the task; later permissions run without a card', async () => {
+    const permissions: string[] = [];
+    const frames: FrameSource = async function* (_input, options) {
+      const first = await options.canUseTool(
+        'Bash',
+        { command: 'npm test' },
+        {
+          signal: options.abortController.signal,
+          toolUseID: 'a',
+          requestId: 'a',
+        },
+      );
+      permissions.push(first?.behavior ?? 'none');
+      const second = await options.canUseTool(
+        'Write',
+        { file_path: 'x.ts' },
+        {
+          signal: options.abortController.signal,
+          toolUseID: 'b',
+          requestId: 'b',
+        },
+      );
+      permissions.push(second?.behavior ?? 'none');
+      yield toolUse('w1', 'Write', { file_path: 'x.ts' });
+      yield toolResult('w1', '');
+      yield toolUse('r1', 'Read', { file_path: 'x.ts' });
+      yield toolResult('r1', 'line one\nline two');
+      yield success('Trusted run finished.');
+    };
+    const { root, service } = setup(frames);
+    const ids = createProject(service, root);
+    const started = startWork(service, ids, 'Trust me');
+    const taskId = started.receipt.createdIds.tasks![0]!;
+    for (
+      let i = 0;
+      i < 10 &&
+      Object.keys(service.getProject(ids.projectId as never).projection.asks)
+        .length === 0;
+      i += 1
+    ) {
+      await tick();
+    }
+    let project = service.getProject(ids.projectId as never);
+    const ask = Object.values(project.projection.asks)[0]!;
+    service.decideAsk(ids.projectId as never, ids.agentId as never, ask.id, {
+      commandId: commandId(),
+      expectedSequence: project.projection.agents[ids.agentId]!.lastSequence,
+      decision: 'approved',
+      trust: 'task',
+    });
+    await service.whenIdle();
+    project = service.getProject(ids.projectId as never);
+    expect(permissions).toEqual(['allow', 'allow']);
+    // Exactly one ask was ever opened; the task carries the trust.
+    expect(Object.keys(project.projection.asks)).toHaveLength(1);
+    expect(project.projection.tasks[taskId]).toMatchObject({
+      state: 'done',
+      trusted: true,
+    });
+    // Reads show up as activity; the final text is posted once.
+    expect(Object.values(project.projection.activities)).toMatchObject([
+      { tool: 'Read', target: 'x.ts', summary: '2 lines' },
+    ]);
+    const bodies = service
+      .listMessages(ids.projectId as never, ids.threadId, { limit: 20 })
+      .messages.map((m) => m.body);
+    expect(bodies.filter((b) => b === 'Trusted run finished.')).toHaveLength(1);
   });
 });

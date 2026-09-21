@@ -238,6 +238,7 @@ export async function decideAsk(
   askId: string,
   expectedSequence: number,
   decision: 'approved' | 'denied',
+  trust: 'once' | 'task' = 'once',
 ): Promise<CommandResponse> {
   return CommandResponseSchema.parse(
     await (
@@ -249,6 +250,7 @@ export async function decideAsk(
             commandId: crypto.randomUUID(),
             expectedSequence,
             decision,
+            trust,
           }),
         },
       )

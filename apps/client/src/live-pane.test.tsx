@@ -116,6 +116,7 @@ function project(work: 'idle' | 'working' = 'idle'): ProjectResponse {
       asks: {},
       checks: {},
       outputs: {},
+      activities: {},
       lastSequence: 5,
       lastEventId: 'event_5',
       appliedEventIds: ['event_1', 'event_2', 'event_3', 'event_4', 'event_5'],

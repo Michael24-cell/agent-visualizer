@@ -7,6 +7,7 @@ import {
   ProposalIdSchema,
 } from './project-ids.js';
 import {
+  ActivitySchema,
   AgentSchema,
   AgentTaskSchema,
   AgentWorkStateSchema,
@@ -40,6 +41,7 @@ export const ProjectProjectionSchema = z.strictObject({
   asks: z.record(z.string(), AskSchema),
   checks: z.record(z.string(), CheckSchema),
   outputs: z.record(z.string(), OutputSchema),
+  activities: z.record(z.string(), ActivitySchema),
   lastSequence: z.number().int().positive(),
   lastEventId: EventIdSchema,
   appliedEventIds: z.array(EventIdSchema),

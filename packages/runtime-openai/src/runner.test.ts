@@ -132,6 +132,14 @@ describe('runOpenAiTask', () => {
       [{ kind: 'say', body: 'Looking at the file.' }],
       [
         {
+          kind: 'activity',
+          tool: 'Read',
+          target: 'src/app.ts',
+          summary: '1 line',
+        },
+      ],
+      [
+        {
           kind: 'check_pass',
           name: 'Smoke check',
           command: 'echo ok',
@@ -146,7 +154,6 @@ describe('runOpenAiTask', () => {
           digest: 'Edited src/app.ts.',
         },
       ],
-      [{ kind: 'say', body: 'Renamed the greeting and verified.' }],
       [{ kind: 'finish', reason: 'Renamed the greeting and verified.' }],
     ]);
     expect(readFileSync(join(cwd, 'src', 'app.ts'), 'utf8')).toBe(
@@ -232,8 +239,8 @@ describe('runOpenAiTask', () => {
     }).done;
     const firstTool = requests[1]!.messages.find((m) => m.role === 'tool')!;
     expect(firstTool.content).toMatch(/outside the project folder/);
-    expect(seen.batches).toEqual([
-      [{ kind: 'fail', reason: 'Stopped after 3 turns without finishing.' }],
+    expect(seen.batches.at(-1)).toEqual([
+      { kind: 'fail', reason: 'Stopped after 3 turns without finishing.' },
     ]);
   });
 
@@ -379,10 +386,10 @@ describe('hallucinated tool responses', () => {
       model: 'm',
       fetch: fetchFn,
     }).done;
-    expect(seen.batches.at(-2)).toEqual([{ kind: 'say', body: 'All good.' }]);
     expect(seen.batches.at(-1)).toEqual([
       { kind: 'finish', reason: 'All good.' },
     ]);
+    expect(seen.batches.flat().filter((i) => i.kind === 'say')).toEqual([]);
   });
 });
 

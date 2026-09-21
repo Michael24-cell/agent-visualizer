@@ -325,6 +325,7 @@ export function applyProjectEvent(
       asks: {},
       checks: {},
       outputs: {},
+      activities: {},
       lastSequence: sequence,
       lastEventId: event.id,
       appliedEventIds: [event.id],
@@ -1130,6 +1131,16 @@ export function applyProjectEvent(
         decidedAtSequence: sequence,
         ...(event.payload.note ? { note: event.payload.note } : {}),
       };
+      if (event.payload.trust === 'task') {
+        if (event.payload.to !== 'approved') {
+          throw new ProjectionError(
+            'invalid_payload',
+            'Only an approval can trust the rest of a task.',
+          );
+        }
+        const task = requireTask(next, ask.taskId);
+        next.tasks[task.id] = { ...task, trusted: true };
+      }
       targets.task(ask.taskId);
       break;
     }
@@ -1201,6 +1212,28 @@ export function applyProjectEvent(
         finishedAtSequence: sequence,
       };
       targets.task(check.taskId);
+      break;
+    }
+
+    case 'task.tool_used': {
+      const activity = event.payload.activity;
+      assertProject(next, activity.projectId);
+      if (next.activities[activity.id]) {
+        throw new ProjectionError(
+          'duplicate_entity',
+          `Activity ${activity.id} exists.`,
+        );
+      }
+      const task = requireTask(next, activity.taskId);
+      if (task.agentId !== activity.agentId) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Task ${task.id} belongs to another agent.`,
+        );
+      }
+      assertSequenceField('activity.atSequence', activity.atSequence, sequence);
+      next.activities[activity.id] = activity;
+      targets.task(task.id);
       break;
     }
 

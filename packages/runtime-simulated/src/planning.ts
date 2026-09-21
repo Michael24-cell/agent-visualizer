@@ -311,7 +311,13 @@ export type AgentStepIntent =
       scope: string;
       consequences: string;
     }
-  | { kind: 'finish'; reason: string }
+  | {
+      kind: 'activity';
+      tool: 'Read' | 'Grep' | 'Glob' | 'Other';
+      target: string;
+      summary?: string;
+    }
+  | { kind: 'finish'; reason: string; alreadySaid?: boolean }
   | { kind: 'fail'; reason: string };
 
 export type AgentStepResult =

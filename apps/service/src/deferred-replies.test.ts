@@ -37,7 +37,9 @@ function config(): AppConfig {
     allowedOrigins: ['http://127.0.0.1:5173'],
     demoProject: true,
     runtime: { kind: 'simulated' },
-    replyDelayMs: 30,
+    // Long enough that a second message reliably lands before the first
+    // reply, even when the whole suite is running.
+    replyDelayMs: 200,
   };
 }
 

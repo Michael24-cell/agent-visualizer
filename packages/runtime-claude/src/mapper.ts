@@ -22,6 +22,11 @@ const TITLE_MAX = 80;
 // in the SDK transcript only.
 const CHECK_TOOLS = new Set(['Bash']);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const READ_TOOLS: Record<string, 'Read' | 'Grep' | 'Glob'> = {
+  Read: 'Read',
+  Grep: 'Grep',
+  Glob: 'Glob',
+};
 
 interface PendingToolUse {
   readonly id: string;
@@ -79,6 +84,7 @@ function pathLabel(input: Record<string, unknown>): string {
 export class ClaudeMessageMapper {
   private readonly pending = new Map<string, PendingToolUse>();
   private finished = false;
+  private lastSaid = '';
 
   get isFinished(): boolean {
     return this.finished;
@@ -115,7 +121,10 @@ export class ClaudeMessageMapper {
     for (const block of message.message.content) {
       if (block.type === 'text') {
         const body = block.text.trim();
-        if (body.length > 0) intents.push({ kind: 'say', body });
+        if (body.length > 0) {
+          intents.push({ kind: 'say', body });
+          this.lastSaid = body;
+        }
       } else if (block.type === 'tool_use') {
         this.pending.set(block.id, {
           id: block.id,
@@ -168,6 +177,13 @@ export class ClaudeMessageMapper {
           title: pathLabel(call.input),
           digest: nonEmpty(text, `${call.name} applied.`),
         });
+      } else if (READ_TOOLS[call.name] && !failed) {
+        intents.push({
+          kind: 'activity',
+          tool: READ_TOOLS[call.name]!,
+          target: readTarget(call.name, call.input),
+          summary: readSummary(call.name, text),
+        });
       }
     }
     return intents;
@@ -178,10 +194,13 @@ export class ClaudeMessageMapper {
   ): AgentStepIntent[] {
     this.finished = true;
     if (message.subtype === 'success' && !message.is_error) {
+      const reason = nonEmpty(message.result, 'Finished.');
       return [
         {
           kind: 'finish',
-          reason: nonEmpty(message.result, 'Finished.'),
+          reason,
+          // The SDK's result repeats the last assistant text.
+          alreadySaid: message.result.trim() === this.lastSaid,
         },
       ];
     }
@@ -198,6 +217,24 @@ export class ClaudeMessageMapper {
       },
     ];
   }
+}
+
+function readTarget(tool: string, input: Record<string, unknown>): string {
+  if (tool === 'Read') return pathLabel(input);
+  const pattern = stringOf(input.pattern) ?? '';
+  const path = stringOf(input.path) ?? stringOf(input.glob) ?? '';
+  return clip(
+    [pattern, path].filter(Boolean).join(' in ') || tool,
+    TITLE_MAX * 2,
+  );
+}
+
+function readSummary(tool: string, text: string): string {
+  const lines = text
+    .split('\n')
+    .filter((line) => line.trim().length > 0).length;
+  if (tool === 'Read') return `${lines} ${lines === 1 ? 'line' : 'lines'}`;
+  return `${lines} ${lines === 1 ? 'match' : 'matches'}`;
 }
 
 // One permission request from the SDK's canUseTool hook, expressed as the

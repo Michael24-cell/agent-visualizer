@@ -1,4 +1,5 @@
 import {
+  ActivityIdSchema,
   AgentIdSchema,
   AskIdSchema,
   BriefRequestIdSchema,
@@ -547,9 +548,13 @@ export class ProjectService {
 
     const ask = (intent: AskIntent): Promise<'approved' | 'denied'> => {
       const current = this.requireProjection(projectId);
-      if (current.tasks[task.id]?.state !== 'working') {
+      const liveTask = current.tasks[task.id];
+      if (liveTask?.state !== 'working') {
         return Promise.resolve('denied');
       }
+      // An earlier approval trusted the rest of this task: no card, the
+      // tool's own check or output row records what ran.
+      if (liveTask.trusted) return Promise.resolve('approved');
       const batch = new ProjectBatch(
         this.store,
         projectId,
@@ -2229,6 +2234,29 @@ export class ProjectService {
         );
         return;
       }
+      case 'activity': {
+        const activityId = ActivityIdSchema.parse(`activity_${suffix}`);
+        batch.emit(
+          'task.tool_used',
+          {
+            activity: {
+              id: activityId,
+              projectId,
+              agentId: agent.id,
+              taskId: task.id,
+              tool: intent.tool,
+              target: intent.target.slice(0, 300),
+              ...(intent.summary
+                ? { summary: intent.summary.slice(0, 300) }
+                : {}),
+              atSequence: batch.nextSequence(),
+            },
+          },
+          meta,
+        );
+        batch.created('activities', activityId);
+        return;
+      }
       case 'finish':
       case 'fail':
         batch.emit(
@@ -2243,7 +2271,10 @@ export class ProjectService {
         );
         // Live agents end with a result that the pane should show. The
         // simulator's scripted agents narrate their own endings already.
-        if (adapter.mode === 'live') {
+        if (
+          adapter.mode === 'live' &&
+          !(intent.kind === 'finish' && intent.alreadySaid)
+        ) {
           const body =
             intent.kind === 'finish'
               ? intent.reason
@@ -2374,6 +2405,9 @@ export class ProjectService {
           from: 'open',
           to: command.decision,
           ...(command.note ? { note: command.note } : {}),
+          ...(command.decision === 'approved' && command.trust === 'task'
+            ? { trust: 'task' }
+            : {}),
         },
         meta,
       );

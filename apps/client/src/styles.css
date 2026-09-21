@@ -5332,3 +5332,133 @@ button:disabled {
 .doc-change-lines .removed {
   text-decoration-color: rgba(255, 255, 255, 0.3);
 }
+
+/* Tool rows: what an agent did, Claude Code style. */
+.tool-row {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  grid-template-areas: 'dot name target note' '. result result result';
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: baseline;
+  margin: -6px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.tool-dot {
+  grid-area: dot;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.tool-passed .tool-dot,
+.tool-output .tool-dot {
+  color: var(--green);
+}
+.tool-failed .tool-dot {
+  color: var(--coral);
+}
+.tool-running .tool-dot {
+  color: var(--amber);
+}
+.tool-name {
+  grid-area: name;
+  font-weight: 600;
+  color: var(--text);
+}
+.tool-target {
+  grid-area: target;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-note {
+  grid-area: note;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tool-failed .tool-note {
+  color: var(--coral);
+}
+.tool-result {
+  grid-area: result;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.tool-elbow {
+  color: var(--text-muted);
+}
+.tool-result-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tool-result.is-open .tool-result-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-result:hover .tool-result-text {
+  color: var(--text-secondary);
+}
+
+/* Markdown in agent replies. */
+.msg-body {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.msg-body p {
+  margin: 0;
+}
+.msg-body code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+.md-code {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.md-code code {
+  padding: 0;
+  background: transparent;
+}
+.md-heading {
+  font-weight: 600;
+}
+.md-h1 {
+  font-size: 16px;
+}
+.md-h2 {
+  font-size: 15px;
+}
+.md-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 3px;
+}

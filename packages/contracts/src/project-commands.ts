@@ -94,6 +94,8 @@ export const AskDecisionCommandSchema = z.strictObject({
   ...CommandBaseShape,
   decision: z.enum(['approved', 'denied']),
   note: z.string().trim().min(1).max(500).optional(),
+  // With 'task', an approval trusts the rest of this task.
+  trust: z.enum(['once', 'task']).default('once'),
 });
 
 // Targets a proposal; expectedSequence is that proposal's lastSequence.

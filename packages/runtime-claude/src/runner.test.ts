@@ -101,7 +101,7 @@ describe('runLiveTask', () => {
           summary: '3 passed',
         },
       ],
-      [{ kind: 'finish', reason: 'All done.' }],
+      [{ kind: 'finish', reason: 'All done.', alreadySaid: false }],
     ]);
   });
 
