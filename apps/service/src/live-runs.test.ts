@@ -565,4 +565,51 @@ describe('live runs', () => {
     expect(snapshot.resolved.checks).not.toContain('npm test');
     expect(second.state).toBe('done');
   });
+
+  it('forwards a follow-up into a running task when the runtime can take it', async () => {
+    const forwarded: string[] = [];
+    let finish: () => void = () => {};
+    const root = mkdtempSync(join(tmpdir(), 'visual-agent-live-'));
+    temporaryDirectories.push(root);
+    mkdirSync(join(root, 'repo'));
+    const database = openHarnessDatabase(join(root, 'test.db'));
+    const store = new SqliteProjectStore(database.database);
+    const service = new ProjectService(store, {
+      folders: { root },
+      runtime: { mode: 'live' },
+      runner: (_input, sink) => ({
+        done: new Promise<void>((resolve) => {
+          finish = () => {
+            sink.emit([{ kind: 'finish', reason: 'Done.' }]);
+            resolve();
+          };
+        }),
+        stop: () => undefined,
+        send: (body) => {
+          forwarded.push(body);
+          return true;
+        },
+      }),
+    });
+    const ids = createProject(service, root);
+    startWork(service, ids, 'Long task');
+    const thread = service.getProject(ids.projectId as never).projection
+      .threads[ids.threadId]!;
+    service.postMessage(
+      ids.projectId as never,
+      ids.threadId,
+      PostMessageCommandSchema.parse({
+        commandId: commandId(),
+        expectedSequence: thread.lastSequence,
+        body: 'Also add a test.',
+      }),
+    );
+    expect(forwarded).toEqual(['Also add a test.']);
+    const bodies = service
+      .listMessages(ids.projectId as never, ids.threadId, { limit: 10 })
+      .messages.map((m) => [m.author.role, m.body]);
+    expect(bodies.at(-1)).toEqual(['user', 'Also add a test.']);
+    finish();
+    await service.whenIdle();
+  });
 });

@@ -52,6 +52,9 @@ export interface LiveTaskSink {
 export interface LiveTask {
   readonly done: Promise<void>;
   stop(): void;
+  // Hands the running agent a follow-up from the user, delivered before
+  // its next model turn. Returns false when this runtime cannot forward.
+  send?: (body: string) => boolean;
 }
 
 export interface FrameSourceOptions {

@@ -1273,12 +1273,22 @@ export class ProjectService {
       currentTask &&
       ['waiting', 'working', 'needs_you'].includes(currentTask.state);
     if (command.intent !== 'start_work') {
+      if (inProgress) {
+        // A follow-up for a running task goes to the agent itself; the
+        // model answers in its own words on its next turn.
+        const run = this.liveRuns.get(currentTask.id)?.run;
+        if (run?.send?.(command.body)) return;
+        batch.post(
+          thread,
+          systemAuthor,
+          `${agent.name} is ${currentTask.state === 'needs_you' ? 'waiting on your decision' : 'busy'} with "${currentTask.title}"; this message could not be handed to it. Decide the pending ask, stop the task, or wait for it to finish.`,
+        );
+        return;
+      }
       batch.post(
         thread,
         systemAuthor,
-        inProgress
-          ? `${agent.name} is working on "${currentTask.title}". Messages aren't forwarded into a running task yet — stop it or wait for it to finish.`
-          : `${agent.name} runs on Claude and takes work, not chat, in this build. Type /start followed by what to do.`,
+        `${agent.name} takes work, not chat, in this build. Type what to do and it starts.`,
       );
       return;
     }

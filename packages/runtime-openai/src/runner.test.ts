@@ -576,3 +576,70 @@ describe('method tools', () => {
     expect(toolNames).not.toContain('read_method');
   });
 });
+
+describe('follow-ups', () => {
+  it('delivers a message sent mid-run before the next model turn', async () => {
+    const cwd = project();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requests: { messages: { role: string; content: string | null }[] }[] =
+      [];
+    let turn = 0;
+    const fetchFn: typeof fetch = async (_url, init) => {
+      requests.push(
+        JSON.parse(String(init?.body)) as (typeof requests)[number],
+      );
+      turn += 1;
+      if (turn === 1) {
+        // First turn: a read; hold the reply until the follow-up is sent.
+        await gate;
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'c1',
+                      type: 'function',
+                      function: {
+                        name: 'read_file',
+                        arguments: '{"path":"README.md"}',
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Noted.' } }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    const run = runOpenAiTask(input(cwd), collect().sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    });
+    expect(run.send!('Also keep it short.')).toBe(true);
+    release();
+    await run.done;
+    const second = requests[1]!.messages;
+    expect(second.at(-1)).toMatchObject({
+      role: 'user',
+      content: 'Also keep it short.',
+    });
+    expect(second.at(-2)).toMatchObject({ role: 'tool' });
+    expect(run.send!('too late')).toBe(false);
+  });
+});

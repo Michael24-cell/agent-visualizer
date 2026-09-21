@@ -166,6 +166,9 @@ export function runOpenAiTask(
   options: OpenAiRuntimeOptions,
 ): LiveTask {
   const abortController = new AbortController();
+  // Follow-ups from the user, appended before the next model turn.
+  const inbox: string[] = [];
+  let finished = false;
   const tools = [
     ...(options.tools ?? LOCAL_AGENT_TOOLS),
     ...(input.documents ? documentTools(input.documents) : []),
@@ -192,6 +195,14 @@ export function runOpenAiTask(
   let nudges = 0;
 
   const done = (async () => {
+    try {
+      await loop();
+    } finally {
+      finished = true;
+    }
+  })();
+
+  async function loop(): Promise<void> {
     const messages: ChatMessage[] = [
       { role: 'system', content: `${input.systemPrompt}\n\n${TOOL_GUIDANCE}` },
       { role: 'user', content: input.prompt },
@@ -199,6 +210,9 @@ export function runOpenAiTask(
     try {
       for (let turn = 0; turn < maxTurns; turn += 1) {
         if (stopped) return;
+        while (inbox.length > 0) {
+          messages.push({ role: 'user', content: inbox.shift()! });
+        }
         const reply = await complete(
           options,
           messages,
@@ -336,13 +350,18 @@ export function runOpenAiTask(
         ]);
       }
     }
-  })();
+  }
 
   return {
     done,
     stop() {
       stopped = true;
       abortController.abort();
+    },
+    send(body) {
+      if (stopped || finished) return false;
+      inbox.push(body);
+      return true;
     },
   };
 }
