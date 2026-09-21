@@ -42,8 +42,9 @@ import {
   snapshotFor,
   workspaceFixture,
 } from './demo-run.js';
+import { runOpenAiTask } from '@harness/runtime-openai';
 import { registerProjectRoutes } from './project-routes.js';
-import { ProjectService } from './projects.js';
+import { ProjectService, type TaskRunner } from './projects.js';
 
 const FOUNDATION_RECORD_ID = 'increment-0';
 const StartSimulatedRunSchema = z.strictObject({
@@ -51,6 +52,34 @@ const StartSimulatedRunSchema = z.strictObject({
   goal: z.string().min(1).optional(),
   taskTitle: z.string().min(1).optional(),
 });
+
+// The runtime the service reports and the runner that executes tasks.
+function runtimeOptions(config: AppConfig): {
+  runtime: {
+    mode: 'simulated' | 'live';
+    provider?: 'claude' | 'openai';
+    model?: string;
+  };
+  runner?: TaskRunner;
+} {
+  const runtime = config.runtime;
+  switch (runtime.kind) {
+    case 'claude':
+      return { runtime: { mode: 'live', provider: 'claude' } };
+    case 'openai':
+      return {
+        runtime: { mode: 'live', provider: 'openai', model: runtime.model },
+        runner: (input, sink) =>
+          runOpenAiTask(input, sink, {
+            baseUrl: runtime.baseUrl,
+            apiKey: runtime.apiKey,
+            model: runtime.model,
+          }),
+      };
+    default:
+      return { runtime: { mode: 'simulated' } };
+  }
+}
 
 function tokensMatch(expected: string, presented: string): boolean {
   const expectedBytes = Buffer.from(expected);
@@ -81,7 +110,7 @@ export function createService(config: AppConfig) {
       config.replyDelayMs === undefined
         ? { mode: 'inline' }
         : { mode: 'deferred', delayMs: config.replyDelayMs },
-    runtime: { mode: config.liveAgents ? 'live' : 'simulated' },
+    ...runtimeOptions(config),
   });
   if (config.demoProject) projects.ensureDemoProject();
   const foundationRecord: FoundationRecord = {

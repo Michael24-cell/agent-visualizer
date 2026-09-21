@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import type { ProjectListResponse } from '@harness/contracts';
 import { createProject, postMessage } from './api';
 import { FolderPicker } from './folder-picker';
-import { nameFromRequest, statusNotes } from './project-notes';
+import { runtimeNote, nameFromRequest, statusNotes } from './project-notes';
 
 // The start screen. One thing to do: say what you're building. That
 // creates the project and hands your words to its coordinator.
@@ -168,10 +168,7 @@ export function Home({
         <p className="home-hint">
           Enter starts a project: a coordinator that plans with you, and agent
           panes you can type into directly. Attach a folder so agents know where
-          the code lives.{' '}
-          {runtime.mode === 'live'
-            ? 'Agents run on Claude with your API key.'
-            : 'Agents are simulated; set ANTHROPIC_API_KEY to run them on Claude.'}
+          the code lives. {runtimeNote(runtime)}
         </p>
       </main>
     </div>

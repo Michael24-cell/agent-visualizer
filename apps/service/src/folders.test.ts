@@ -109,7 +109,7 @@ describe('attaching a repository to a project', () => {
       sessionToken: 'a'.repeat(64),
       allowedOrigins: ['http://127.0.0.1:5173'],
       demoProject: false,
-      liveAgents: false,
+      runtime: { kind: 'simulated' },
       folderRoot: root,
     };
   }

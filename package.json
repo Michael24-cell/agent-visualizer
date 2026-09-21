@@ -10,6 +10,7 @@
     "packages/persistence",
     "packages/runtime-simulated",
     "packages/runtime-claude",
+    "packages/runtime-openai",
     "apps/service",
     "apps/client"
   ],

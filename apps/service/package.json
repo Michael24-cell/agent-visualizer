@@ -16,6 +16,7 @@
     "@harness/domain": "*",
     "@harness/persistence": "*",
     "@harness/runtime-claude": "*",
+    "@harness/runtime-openai": "*",
     "@harness/runtime-simulated": "*",
     "fastify": "^5.0.0"
   }

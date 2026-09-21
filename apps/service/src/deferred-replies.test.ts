@@ -36,7 +36,7 @@ function config(): AppConfig {
     sessionToken: 'a'.repeat(64),
     allowedOrigins: ['http://127.0.0.1:5173'],
     demoProject: true,
-    liveAgents: false,
+    runtime: { kind: 'simulated' },
     replyDelayMs: 30,
   };
 }

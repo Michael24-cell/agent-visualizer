@@ -9,6 +9,8 @@ import {
   briefNote,
   methodNote,
   planNote,
+  runtimeLabel,
+  runtimeNote,
   statusLabels,
 } from './project-notes';
 import { ProjectDetail, type DetailItem } from './project-panel';
@@ -149,13 +151,9 @@ export function Workspace({
         <h1 className="app-title">{project.projection.project.name}</h1>
         <span
           className={`mode-badge mode-${project.runtime.mode}`}
-          title={
-            project.runtime.mode === 'live'
-              ? 'Agents run on Claude'
-              : 'Simulated coordinator and agents'
-          }
+          title={runtimeNote(project.runtime)}
         >
-          {project.runtime.mode === 'live' ? 'Claude' : 'Simulated'}
+          {runtimeLabel(project.runtime)}
         </span>
         <span
           className={`pane-state work-${project.summary.status}`}

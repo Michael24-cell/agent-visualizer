@@ -25,7 +25,7 @@ function testConfig(): AppConfig {
     sessionToken: 'a'.repeat(64),
     allowedOrigins: ['http://127.0.0.1:5173'],
     demoProject: false,
-    liveAgents: false,
+    runtime: { kind: 'simulated' },
   };
 }
 

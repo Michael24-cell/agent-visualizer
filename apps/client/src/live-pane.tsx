@@ -31,6 +31,7 @@ import {
   workLabels,
   type LiveTarget,
 } from './live';
+import { runtimeNote } from './project-notes';
 
 // A pane on a real, persisted thread. Everything shown here came back from
 // the service: messages are read by cursor, replies arrive in the command
@@ -461,7 +462,15 @@ export function LivePane({
               'No task yet — type to talk, /start to give it work')
             : 'Plans the project with you'}
         </span>
-        {target.kind === 'agent' ? (
+        {target.kind === 'agent' && project.runtime.provider === 'openai' ? (
+          <span
+            className="pane-model-fixed"
+            title={runtimeNote(project.runtime)}
+          >
+            {project.runtime.model}
+          </span>
+        ) : null}
+        {target.kind === 'agent' && project.runtime.provider !== 'openai' ? (
           <label className="pane-model">
             <span className="visually-hidden">Model for {title}</span>
             <select

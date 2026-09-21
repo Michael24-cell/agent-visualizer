@@ -60,6 +60,23 @@ export function briefNote(project: ProjectResponse): string {
   return `${settled} of ${BRIEF_REQUIRED_FIELDS.length} decided`;
 }
 
+// What the header badge and hints call the runtime.
+export function runtimeLabel(runtime: ProjectResponse['runtime']): string {
+  if (runtime.mode !== 'live') return 'Simulated';
+  if (runtime.provider === 'openai') return runtime.model ?? 'Local model';
+  return 'Claude';
+}
+
+export function runtimeNote(runtime: ProjectResponse['runtime']): string {
+  if (runtime.mode !== 'live') {
+    return 'Agents are simulated. Set ANTHROPIC_API_KEY for Claude, or HARNESS_RUNTIME=local for a local model.';
+  }
+  if (runtime.provider === 'openai') {
+    return `Agents run on ${runtime.model ?? 'a local model'} through your OpenAI-compatible endpoint.`;
+  }
+  return 'Agents run on Claude with your API key.';
+}
+
 export function methodNote(project: ProjectResponse): string {
   const method = project.projection.method;
   return method

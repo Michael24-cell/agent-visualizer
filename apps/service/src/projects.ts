@@ -82,6 +82,8 @@ import {
   type AskIntent,
   type FrameSource,
   type LiveTask,
+  type LiveTaskInput,
+  type LiveTaskSink,
 } from '@harness/runtime-claude';
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
@@ -288,16 +290,21 @@ export interface ProjectServiceOptions {
   // Which runtime executes agent tasks. Live runs each task on a Claude
   // agent in the attached folder; the coordinator stays simulated.
   readonly runtime?: RuntimeInfo;
-  // Where live frames come from. Tests substitute fake frames.
+  // How a live task is executed. Defaults to the Claude Agent SDK; the
+  // app passes an OpenAI-compatible runner for local models. `frames`
+  // keeps the Claude path but substitutes fake SDK frames (tests).
+  readonly runner?: TaskRunner;
   readonly frames?: FrameSource;
 }
+
+export type TaskRunner = (input: LiveTaskInput, sink: LiveTaskSink) => LiveTask;
 
 export class ProjectService {
   private readonly now: () => string;
   readonly folders: FolderOptions;
   private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
   private readonly runtime: RuntimeInfo;
-  private readonly frames: FrameSource;
+  private readonly runner: TaskRunner;
   // Live runs by task id, and the permission waits they are paused on.
   private readonly liveRuns = new Map<string, LiveTask>();
   private readonly askWaiters = new Map<
@@ -315,7 +322,9 @@ export class ProjectService {
     this.folders = options.folders ?? {};
     this.replies = options.replies ?? { mode: 'inline' };
     this.runtime = options.runtime ?? { mode: 'simulated' };
-    this.frames = options.frames ?? sdkFrameSource;
+    const frames = options.frames ?? sdkFrameSource;
+    this.runner =
+      options.runner ?? ((input, sink) => runLiveTask(input, sink, frames));
   }
 
   get isLive(): boolean {
@@ -569,7 +578,7 @@ export class ProjectService {
       ]);
       return;
     }
-    const run = runLiveTask(
+    const run = this.runner(
       {
         cwd: repository.path,
         model: agentModel(agent),
@@ -581,7 +590,6 @@ export class ProjectService {
         prompt: buildTaskPrompt(task),
       },
       { emit, ask },
-      this.frames,
     );
     this.liveRuns.set(task.id, run);
     void run.done.finally(() => {

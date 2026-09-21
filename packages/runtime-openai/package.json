@@ -1,0 +1,16 @@
+{
+  "name": "@harness/runtime-openai",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@harness/contracts": "*",
+    "@harness/runtime-claude": "*",
+    "@harness/runtime-simulated": "*",
+    "zod": "^4.0.0"
+  }
+}

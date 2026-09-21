@@ -4606,6 +4606,19 @@ button:disabled {
 .pane-model select:hover {
   color: var(--text);
 }
+.pane-model-fixed {
+  margin-left: auto;
+  flex: 0 0 auto;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.pane-model-fixed + .pane-state {
+  margin-left: 0;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;

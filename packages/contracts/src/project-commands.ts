@@ -73,6 +73,11 @@ export const SetAgentModelCommandSchema = z.strictObject({
 // reported so the client can say so honestly.
 export const RuntimeInfoSchema = z.strictObject({
   mode: z.enum(['simulated', 'live']),
+  // Which live runtime: Claude via the Agent SDK, or any OpenAI-compatible
+  // endpoint (Ollama locally, hosted APIs). Absent when simulated.
+  provider: z.enum(['claude', 'openai']).optional(),
+  // The model name for openai runtimes, where every agent shares one.
+  model: z.string().min(1).optional(),
 });
 
 // Targets a thread; expectedSequence is that thread's lastSequence.

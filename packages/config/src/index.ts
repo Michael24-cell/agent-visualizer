@@ -23,7 +23,14 @@ const EnvironmentSchema = z.object({
   // the SDK subprocess inherits the variable itself. 'simulated' forces
   // the simulator even with a key set.
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  HARNESS_RUNTIME: z.enum(['auto', 'simulated', 'live']).default('auto'),
+  // 'auto' runs on Claude when a key is present, otherwise the simulator.
+  // 'local' runs on an OpenAI-compatible endpoint such as Ollama.
+  HARNESS_RUNTIME: z
+    .enum(['auto', 'simulated', 'claude', 'live', 'local'])
+    .default('auto'),
+  HARNESS_LOCAL_BASE_URL: z.string().url().default('http://127.0.0.1:11434/v1'),
+  HARNESS_LOCAL_API_KEY: z.string().min(1).optional(),
+  HARNESS_LOCAL_MODEL: z.string().min(1).default('qwen2.5-coder:7b'),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -38,8 +45,18 @@ export interface AppConfig {
   readonly demoProject: boolean;
   readonly folderRoot?: string | undefined;
   readonly replyDelayMs?: number | undefined;
-  readonly liveAgents: boolean;
+  readonly runtime: RuntimeConfig;
 }
+
+export type RuntimeConfig =
+  | { readonly kind: 'simulated' }
+  | { readonly kind: 'claude' }
+  | {
+      readonly kind: 'openai';
+      readonly baseUrl: string;
+      readonly apiKey?: string | undefined;
+      readonly model: string;
+    };
 
 function defaultDataDirectory(
   environment: z.infer<typeof EnvironmentSchema>,
@@ -93,9 +110,29 @@ export function loadAppConfig(
       ? { folderRoot: environment.HARNESS_FOLDER_ROOT }
       : {}),
     replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
-    liveAgents:
-      environment.HARNESS_RUNTIME === 'live' ||
-      (environment.HARNESS_RUNTIME === 'auto' &&
-        Boolean(environment.ANTHROPIC_API_KEY)),
+    runtime: runtimeFrom(environment),
   };
+}
+
+function runtimeFrom(
+  environment: z.infer<typeof EnvironmentSchema>,
+): RuntimeConfig {
+  switch (environment.HARNESS_RUNTIME) {
+    case 'simulated':
+      return { kind: 'simulated' };
+    case 'claude':
+    case 'live':
+      return { kind: 'claude' };
+    case 'local':
+      return {
+        kind: 'openai',
+        baseUrl: environment.HARNESS_LOCAL_BASE_URL,
+        apiKey: environment.HARNESS_LOCAL_API_KEY,
+        model: environment.HARNESS_LOCAL_MODEL,
+      };
+    default:
+      return environment.ANTHROPIC_API_KEY
+        ? { kind: 'claude' }
+        : { kind: 'simulated' };
+  }
 }

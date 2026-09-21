@@ -41,6 +41,10 @@ The Increment 2 demo run (`/api/workspace`, `/api/demo-runs`, the "Plan demo" me
 
 Agents run on Claude when `ANTHROPIC_API_KEY` is set in the shell that starts the service (`HARNESS_RUNTIME=simulated` forces the simulator; `HARNESS_RUNTIME=live` forces live). The key is read only for its presence; the SDK subprocess inherits it. In live mode a task starts a `query()` in the project's attached folder with the agent's chosen model (`…/agents/:id/model`), streams the SDK frames through `@harness/runtime-claude` into the same events the simulator emits (messages, checks from `Bash`, diff outputs from file edits, asks from permission prompts), pauses the run on an Ask until it is decided, and aborts it on Stop. Attaching a folder is required before live work starts; the coordinator stays simulated; plain chat on a live agent thread is not forwarded into a running task yet. Pay-per-token: the SDK bills the key directly.
 
+### Local and hosted open models (OpenAI-compatible)
+
+`HARNESS_RUNTIME=local` runs agent tasks on any OpenAI-compatible chat endpoint through `@harness/runtime-openai`, which owns a small tool loop (read, list, search, run command, edit, write; every path confined to the attached folder) and emits the same events as the other runtimes. Defaults target Ollama: `HARNESS_LOCAL_BASE_URL=http://127.0.0.1:11434/v1`, `HARNESS_LOCAL_MODEL=qwen2.5-coder:7b`; set `HARNESS_LOCAL_API_KEY` for hosted endpoints (Groq, Gemini, OpenRouter). All agents share the configured model; the pane header shows its name. Commands and file changes still ask first, and Stop aborts the run.
+
 ## Boundaries that must remain stable
 
 - Tasks are durable; runtime processes are replaceable workers.
