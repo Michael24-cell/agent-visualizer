@@ -371,6 +371,46 @@ export function createService(config: AppConfig) {
 
   registerProjectRoutes(service, projects);
 
+  // What the configured OpenAI-compatible endpoint offers, so a wrong
+  // model name is a one-line fix rather than a failed task.
+  service.get('/api/runtime/models', async (_request, reply) => {
+    const runtime = config.runtime;
+    if (runtime.kind !== 'openai') {
+      return { runtime: runtime.kind, models: [] };
+    }
+    try {
+      const response = await fetch(
+        `${runtime.baseUrl.replace(/\/$/, '')}/models`,
+        {
+          headers: runtime.apiKey
+            ? { authorization: `Bearer ${runtime.apiKey}` }
+            : {},
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (!response.ok) {
+        return reply.code(502).send({
+          error: `${runtime.baseUrl} answered ${response.status} when listing models.`,
+          code: 'invalid_command',
+        });
+      }
+      const body = (await response.json()) as {
+        data?: { id?: string; name?: string }[];
+        models?: { id?: string; name?: string }[];
+      };
+      const models = (body.data ?? body.models ?? [])
+        .map((entry) => entry.id ?? entry.name ?? '')
+        .filter((id) => id.length > 0)
+        .sort();
+      return { runtime: 'openai', configured: runtime.model, models };
+    } catch (error) {
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : String(error),
+        code: 'invalid_command',
+      });
+    }
+  });
+
   service.addHook('onClose', async () => {
     projects.stopAll();
     await projects.whenIdle();

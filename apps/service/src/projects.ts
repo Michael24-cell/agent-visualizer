@@ -2241,6 +2241,25 @@ export class ProjectService {
           },
           meta,
         );
+        // Live agents end with a result that the pane should show. The
+        // simulator's scripted agents narrate their own endings already.
+        if (adapter.mode === 'live') {
+          const body =
+            intent.kind === 'finish'
+              ? intent.reason
+              : `Failed: ${intent.reason}`;
+          batch.post(
+            thread,
+            intent.kind === 'finish'
+              ? agentAuthor(agent, adapter)
+              : systemAuthor,
+            body.length > MESSAGE_BODY_MAX_LENGTH
+              ? `${body.slice(0, MESSAGE_BODY_MAX_LENGTH - 1)}…`
+              : body,
+            'chat',
+            { taskId: task.id },
+          );
+        }
         return;
     }
   }
