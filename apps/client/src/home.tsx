@@ -1,11 +1,19 @@
 import { useState, type KeyboardEvent } from 'react';
-import type { ProjectListResponse } from '@harness/contracts';
-import { createProject, postMessage } from './api';
+import type { ProjectListResponse, RuntimeSettings } from '@harness/contracts';
+import { createAgent, createProject, postMessage } from './api';
 import { FolderPicker } from './folder-picker';
-import { runtimeNote, nameFromRequest, statusNotes } from './project-notes';
+import {
+  nameFromRequest,
+  recentFolders,
+  runtimeLabel,
+  runtimeNote,
+  statusNotes,
+} from './project-notes';
+import { RuntimeSetup } from './runtime-setup';
 
-// The start screen. One thing to do: say what you're building. That
-// creates the project and hands your words to its coordinator.
+// The start screen. Two decisions, in order: where is the code, and what
+// to do. With a folder, typing starts an agent on it. Without one, the
+// words go to the coordinator to plan.
 
 export function Home({
   projects,
@@ -13,17 +21,21 @@ export function Home({
   onOpen,
   onCreated,
   onError,
+  onRuntimeChanged,
 }: {
   projects: ProjectListResponse['projects'];
   runtime: ProjectListResponse['runtime'];
   onOpen: (projectId: string) => void;
   onCreated: (projectId: string) => void;
   onError: (message: string) => void;
+  onRuntimeChanged: (settings: RuntimeSettings) => void;
 }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [folder, setFolder] = useState<string>();
   const [picking, setPicking] = useState(false);
+  const [setup, setSetup] = useState(false);
+  const recent = recentFolders(projects);
 
   const start = async () => {
     const body = value.trim();
@@ -32,15 +44,38 @@ export function Home({
     try {
       const created = await createProject(nameFromRequest(body), folder);
       const projectId = created.project.projection.projectId;
-      const coordinator = Object.values(
-        created.project.projection.threads,
-      ).find((thread) => thread.kind === 'coordinator');
-      if (coordinator) {
-        await postMessage(projectId, 'coordinator', {
-          expectedSequence: coordinator.lastSequence,
-          body,
-          intent: 'chat',
-        });
+      if (folder) {
+        // A folder means work: one agent, and the words are its task.
+        const agent = await createAgent(
+          projectId,
+          created.project.projection.lastSequence,
+          'Agent 1',
+          'neutral',
+        );
+        const agentId = agent.receipt.createdIds.agents?.[0];
+        const thread = agentId
+          ? agent.project.projection.threads[
+              agent.project.projection.agents[agentId]!.threadId
+            ]
+          : undefined;
+        if (agentId && thread) {
+          await postMessage(projectId, agentId, {
+            expectedSequence: thread.lastSequence,
+            body,
+            intent: 'start_work',
+          });
+        }
+      } else {
+        const coordinator = Object.values(
+          created.project.projection.threads,
+        ).find((thread) => thread.kind === 'coordinator');
+        if (coordinator) {
+          await postMessage(projectId, 'coordinator', {
+            expectedSequence: coordinator.lastSequence,
+            body,
+            intent: 'chat',
+          });
+        }
       }
       setValue('');
       onCreated(projectId);
@@ -59,6 +94,8 @@ export function Home({
       void start();
     }
   };
+
+  const folderName = folder?.split('/').pop() ?? '';
 
   return (
     <div className="home">
@@ -79,6 +116,9 @@ export function Home({
                 <button type="button" onClick={() => onOpen(item.project.id)}>
                   <span>{item.project.name}</span>
                   <small>
+                    {item.project.repository
+                      ? `${item.project.repository.name} · `
+                      : ''}
                     {statusNotes[item.summary.status] ?? item.summary.status}
                     {item.project.origin === 'demo' ? ' · demo' : ''}
                   </small>
@@ -91,13 +131,73 @@ export function Home({
         )}
       </aside>
       <main className="home-main">
+        <section className="home-where" aria-label="Where is the code?">
+          <h2 className="home-step">Where is the code?</h2>
+          <div className="home-chips">
+            {recent.map((path) => (
+              <button
+                key={path}
+                type="button"
+                className={`chip ${folder === path ? 'is-on' : ''}`}
+                title={path}
+                aria-pressed={folder === path}
+                onClick={() => setFolder(folder === path ? undefined : path)}
+              >
+                <span className="folder-mark is-repo" aria-hidden="true">
+                  ⎇
+                </span>
+                {path.split('/').pop()}
+              </button>
+            ))}
+            {folder && !recent.includes(folder) ? (
+              <button
+                type="button"
+                className="chip is-on"
+                title={folder}
+                aria-pressed
+                onClick={() => setFolder(undefined)}
+              >
+                <span className="folder-mark is-repo" aria-hidden="true">
+                  ⎇
+                </span>
+                {folderName}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="chip chip-action"
+              onClick={() => setPicking(true)}
+            >
+              Choose a folder…
+            </button>
+            <button
+              type="button"
+              className={`chip ${folder === undefined ? 'is-on chip-quiet' : 'chip-quiet'}`}
+              aria-pressed={folder === undefined}
+              onClick={() => setFolder(undefined)}
+            >
+              No folder — just plan
+            </button>
+          </div>
+          {picking ? (
+            <FolderPicker
+              initialPath={folder}
+              onPick={(path) => {
+                setFolder(path);
+                setPicking(false);
+              }}
+              onCancel={() => setPicking(false)}
+            />
+          ) : null}
+        </section>
+
         <form
           className="home-composer composer category-neutral"
           onSubmit={(event) => {
             event.preventDefault();
             void start();
           }}
-          aria-label="Start a project"
+          aria-label={folder ? 'Start work' : 'Start a project'}
         >
           <span className="composer-rail" aria-hidden="true" />
           <div className="composer-field">
@@ -105,8 +205,14 @@ export function Home({
               autoFocus
               rows={3}
               value={value}
-              placeholder="What are we building?"
-              aria-label="What are we building?"
+              placeholder={
+                folder
+                  ? `What should the agent do in ${folderName}?`
+                  : 'What are we building?'
+              }
+              aria-label={
+                folder ? 'What should the agent do?' : 'What are we building?'
+              }
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={onKey}
               disabled={busy}
@@ -117,59 +223,41 @@ export function Home({
             className="composer-send"
             disabled={busy || !value.trim()}
           >
-            Start <kbd>⏎</kbd>
+            {folder ? 'Start work' : 'Plan'} <kbd>⏎</kbd>
           </button>
         </form>
-        <div className="home-folder">
-          {folder ? (
-            <>
-              <span className="folder-mark is-repo" aria-hidden="true">
-                ⎇
-              </span>
-              <code title={folder}>{folder.split('/').pop()}</code>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setPicking(true)}
-              >
-                change
-              </button>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setFolder(undefined)}
-              >
-                remove
-              </button>
-            </>
-          ) : (
-            <>
-              <span>No folder attached</span>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setPicking(true)}
-              >
-                choose a folder
-              </button>
-            </>
-          )}
+
+        <p className="home-hint">
+          {folder
+            ? 'Enter opens the project on an agent pane and starts this as its first task. You approve what it wants to run or change.'
+            : 'Enter opens the project on the coordinator, which plans it with you. Attach a folder any time to start work.'}
+        </p>
+
+        <div className="home-runtime">
+          <span
+            className={`mode-badge mode-${runtime.mode}`}
+            title={runtimeNote(runtime)}
+          >
+            {runtimeLabel(runtime)}
+          </span>
+          <span className="home-runtime-note">{runtimeNote(runtime)}</span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setSetup((open) => !open)}
+          >
+            {setup ? 'close' : 'change'}
+          </button>
         </div>
-        {picking ? (
-          <FolderPicker
-            initialPath={folder}
-            onPick={(path) => {
-              setFolder(path);
-              setPicking(false);
+        {setup ? (
+          <RuntimeSetup
+            onSaved={(settings) => {
+              onRuntimeChanged(settings);
+              setSetup(false);
             }}
-            onCancel={() => setPicking(false)}
+            onClose={() => setSetup(false)}
           />
         ) : null}
-        <p className="home-hint">
-          Enter starts a project: a coordinator that plans with you, and agent
-          panes you can type into directly. Attach a folder so agents know where
-          the code lives. {runtimeNote(runtime)}
-        </p>
       </main>
     </div>
   );

@@ -33,6 +33,9 @@ const EnvironmentSchema = z.object({
   HARNESS_LOCAL_MODEL: z.string().min(1).default('qwen2.5-coder:7b'),
   // 'full' adds edit_file (search/replace) for models that can use it.
   HARNESS_LOCAL_TOOLS: z.enum(['basic', 'full']).default('basic'),
+  // Set by scripts/dev.mjs and scripts/start.mjs to the .env.local path so
+  // the setup panel can save settings for next start.
+  HARNESS_ENV_FILE: z.string().min(1).optional(),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -48,6 +51,17 @@ export interface AppConfig {
   readonly folderRoot?: string | undefined;
   readonly replyDelayMs?: number | undefined;
   readonly runtime: RuntimeConfig;
+  // Whether ANTHROPIC_API_KEY is set (the value is never copied here).
+  readonly claudeKeyPresent: boolean;
+  // Defaults for the OpenAI-compatible runtime even when not selected.
+  readonly local: {
+    readonly baseUrl: string;
+    readonly apiKey?: string | undefined;
+    readonly model: string;
+    readonly tools: 'basic' | 'full';
+  };
+  // The file the setup panel writes for next start, when known.
+  readonly envFile?: string | undefined;
 }
 
 export type RuntimeConfig =
@@ -114,6 +128,14 @@ export function loadAppConfig(
       : {}),
     replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
     runtime: runtimeFrom(environment),
+    claudeKeyPresent: Boolean(environment.ANTHROPIC_API_KEY),
+    local: {
+      baseUrl: environment.HARNESS_LOCAL_BASE_URL,
+      apiKey: environment.HARNESS_LOCAL_API_KEY,
+      model: environment.HARNESS_LOCAL_MODEL,
+      tools: environment.HARNESS_LOCAL_TOOLS,
+    },
+    envFile: environment.HARNESS_ENV_FILE,
   };
 }
 

@@ -117,6 +117,24 @@ export function App() {
           onOpen={(id) => void openProject(id)}
           onCreated={(id) => void openProject(id)}
           onError={setActionError}
+          onRuntimeChanged={(settings) => {
+            setRuntime(
+              settings.kind === 'simulated'
+                ? { mode: 'simulated' }
+                : settings.kind === 'claude'
+                  ? { mode: 'live', provider: 'claude' }
+                  : {
+                      mode: 'live',
+                      provider: 'openai',
+                      ...(settings.model ? { model: settings.model } : {}),
+                    },
+            );
+            setNotice(
+              settings.kind === 'simulated'
+                ? 'Agents are simulated.'
+                : `Agents run on ${settings.kind === 'claude' ? 'Claude' : (settings.model ?? 'the configured model')}.`,
+            );
+          }}
         />
       ) : (
         <Workspace

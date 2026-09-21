@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { loadEnvLocal } from './env-local.mjs';
+import { envLocalPath, loadEnvLocal } from './env-local.mjs';
 
 const loaded = loadEnvLocal();
+process.env.HARNESS_ENV_FILE ??= envLocalPath();
 if (loaded.length) console.log(`.env.local: ${loaded.join(', ')}`);
 
 const sessionToken = randomBytes(32).toString('hex');

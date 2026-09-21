@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import { z } from 'zod';
-import type { AppConfig } from '@harness/config';
+import type { AppConfig, RuntimeConfig } from '@harness/config';
 import {
   AdvanceDemoRunCommandSchema,
   AgentInstanceIdSchema,
@@ -14,6 +14,8 @@ import {
   LaunchDemoRunResponseSchema,
   PlanVersionIdSchema,
   RunIdSchema,
+  RuntimeSettingsSchema,
+  RuntimeUpdateSchema,
   ServiceHealthSchema,
   TaskIdSchema,
   WorkspaceResponseSchema,
@@ -47,6 +49,8 @@ import {
   LOCAL_AGENT_TOOLS_FULL,
   runOpenAiTask,
 } from '@harness/runtime-openai';
+import { runLiveTask } from '@harness/runtime-claude';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { registerProjectRoutes } from './project-routes.js';
 import { ProjectService, type TaskRunner } from './projects.js';
 
@@ -58,7 +62,7 @@ const StartSimulatedRunSchema = z.strictObject({
 });
 
 // The runtime the service reports and the runner that executes tasks.
-function runtimeOptions(config: AppConfig): {
+function runtimeOptions(runtime: RuntimeConfig): {
   runtime: {
     mode: 'simulated' | 'live';
     provider?: 'claude' | 'openai';
@@ -66,10 +70,12 @@ function runtimeOptions(config: AppConfig): {
   };
   runner?: TaskRunner;
 } {
-  const runtime = config.runtime;
   switch (runtime.kind) {
     case 'claude':
-      return { runtime: { mode: 'live', provider: 'claude' } };
+      return {
+        runtime: { mode: 'live', provider: 'claude' },
+        runner: (input, sink) => runLiveTask(input, sink),
+      };
     case 'openai':
       return {
         runtime: { mode: 'live', provider: 'openai', model: runtime.model },
@@ -87,6 +93,34 @@ function runtimeOptions(config: AppConfig): {
     default:
       return { runtime: { mode: 'simulated' } };
   }
+}
+
+// Writes the runtime keys into .env.local, keeping every other line.
+function saveEnvFile(
+  path: string,
+  values: Record<string, string | undefined>,
+): void {
+  let lines: string[];
+  try {
+    lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  } catch {
+    lines = [];
+  }
+  const remaining = new Map(Object.entries(values));
+  const next = lines
+    .map((line) => {
+      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+      if (!match || !remaining.has(match[1]!)) return line;
+      const value = remaining.get(match[1]!);
+      remaining.delete(match[1]!);
+      return value === undefined ? undefined : `${match[1]}=${value}`;
+    })
+    .filter((line): line is string => line !== undefined);
+  for (const [key, value] of remaining) {
+    if (value !== undefined) next.push(`${key}=${value}`);
+  }
+  while (next.length && next[next.length - 1] === '') next.pop();
+  writeFileSync(path, `${next.join('\n')}\n`);
 }
 
 function tokensMatch(expected: string, presented: string): boolean {
@@ -118,8 +152,12 @@ export function createService(config: AppConfig) {
       config.replyDelayMs === undefined
         ? { mode: 'inline' }
         : { mode: 'deferred', delayMs: config.replyDelayMs },
-    ...runtimeOptions(config),
+    ...runtimeOptions(config.runtime),
   });
+  // Runtime settings can change while running; this is the current one.
+  let currentRuntime: RuntimeConfig = config.runtime;
+  const claudeKeyPresent = config.claudeKeyPresent;
+  let local = { ...config.local };
   if (config.demoProject) projects.ensureDemoProject();
   projects.recoverInterruptedRuns();
   const foundationRecord: FoundationRecord = {
@@ -373,11 +411,77 @@ export function createService(config: AppConfig) {
 
   // What the configured OpenAI-compatible endpoint offers, so a wrong
   // model name is a one-line fix rather than a failed task.
-  service.get('/api/runtime/models', async (_request, reply) => {
-    const runtime = config.runtime;
-    if (runtime.kind !== 'openai') {
-      return { runtime: runtime.kind, models: [] };
+  service.get('/api/runtime', async () =>
+    RuntimeSettingsSchema.parse(describeRuntime()),
+  );
+
+  service.post('/api/runtime', async (request, reply) => {
+    const update = RuntimeUpdateSchema.safeParse(request.body);
+    if (!update.success) {
+      return reply.code(400).send({
+        error: 'Runtime settings are not valid.',
+        code: 'invalid_command',
+      });
     }
+    const body = update.data;
+    if (body.kind === 'claude' && !claudeKeyPresent) {
+      return reply.code(409).send({
+        error:
+          'ANTHROPIC_API_KEY is not set. Export it in the shell that starts the app, then restart.',
+        code: 'invalid_transition',
+      });
+    }
+    if (body.kind === 'openai') {
+      local = {
+        baseUrl: body.baseUrl ?? local.baseUrl,
+        model: body.model ?? local.model,
+        tools: body.tools ?? local.tools,
+        apiKey: body.apiKey ? body.apiKey : local.apiKey,
+      };
+      currentRuntime = { kind: 'openai', ...local };
+    } else {
+      currentRuntime = { kind: body.kind };
+    }
+    const options = runtimeOptions(currentRuntime);
+    projects.setRuntime(options.runtime, options.runner);
+    if (config.envFile) {
+      try {
+        saveEnvFile(config.envFile, {
+          HARNESS_RUNTIME:
+            currentRuntime.kind === 'openai' ? 'local' : currentRuntime.kind,
+          ...(currentRuntime.kind === 'openai'
+            ? {
+                HARNESS_LOCAL_BASE_URL: local.baseUrl,
+                HARNESS_LOCAL_MODEL: local.model,
+                HARNESS_LOCAL_TOOLS: local.tools,
+                ...(body.apiKey ? { HARNESS_LOCAL_API_KEY: body.apiKey } : {}),
+              }
+            : {}),
+        });
+      } catch (error) {
+        service.log.warn(error, 'could not save .env.local');
+      }
+    }
+    return RuntimeSettingsSchema.parse(describeRuntime());
+  });
+
+  function describeRuntime() {
+    return {
+      kind: currentRuntime.kind,
+      baseUrl: local.baseUrl,
+      model: local.model,
+      tools: local.tools,
+      keyPresent: Boolean(local.apiKey),
+      claudeKeyPresent,
+      ...(config.envFile ? { envFile: config.envFile } : {}),
+    };
+  }
+
+  service.get('/api/runtime/models', async (_request, reply) => {
+    const runtime =
+      currentRuntime.kind === 'openai'
+        ? currentRuntime
+        : { kind: 'openai' as const, ...local };
     try {
       const response = await fetch(
         `${runtime.baseUrl.replace(/\/$/, '')}/models`,

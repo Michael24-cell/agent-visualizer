@@ -37,6 +37,12 @@ function config(): AppConfig {
     allowedOrigins: ['http://127.0.0.1:5173'],
     demoProject: true,
     runtime: { kind: 'simulated' },
+    claudeKeyPresent: false,
+    local: {
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      model: 'qwen2.5-coder:7b',
+      tools: 'basic',
+    },
     // Long enough that a second message reliably lands before the first
     // reply, even when the whole suite is running.
     replyDelayMs: 200,

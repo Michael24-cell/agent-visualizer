@@ -5552,3 +5552,187 @@ button:disabled {
 .tool-link:hover {
   text-decoration-color: var(--silver);
 }
+
+/* Start screen: folder first, then the composer, then the runtime. */
+.home-where {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 10px;
+}
+.home-step {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.chip.is-on {
+  border-color: rgba(var(--silver-rgb), 0.55);
+  background: rgba(var(--silver-rgb), 0.1);
+  color: var(--text);
+}
+.chip-action {
+  border-style: dashed;
+  background: transparent;
+}
+.chip-quiet {
+  background: transparent;
+}
+.home-runtime {
+  width: min(760px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.home-runtime-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setup {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.setup-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.setup-head strong {
+  font-size: 14px;
+}
+.setup-head .pane-close {
+  margin-left: auto;
+}
+.setup-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.setup-choices label {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.setup-choices label.is-on {
+  border-color: rgba(var(--silver-rgb), 0.55);
+  background: rgba(var(--silver-rgb), 0.08);
+}
+.setup-choices label.is-off {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.setup-choices input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.setup-choices span {
+  font-size: 13px;
+  font-weight: 600;
+}
+.setup-choices small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.setup-fields {
+  display: grid;
+  gap: 10px;
+}
+.setup-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.setup-fields > label {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.setup-fields > label > span:first-child {
+  color: var(--text-muted);
+}
+.setup-fields input[type='text'],
+.setup-fields input[type='password'],
+.setup-fields input:not([type]) {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.setup-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.setup-inline {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+}
+.setup-inline small {
+  color: var(--text-muted);
+}
+.setup-error {
+  margin: 0;
+  color: var(--coral);
+  font-size: 13px;
+}
+.setup-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.setup-foot .doc-hint {
+  margin-right: auto;
+}
+@media (max-width: 720px) {
+  .setup-choices {
+    grid-template-columns: 1fr;
+  }
+  .setup-fields > label {
+    grid-template-columns: 1fr;
+  }
+}

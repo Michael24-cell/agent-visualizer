@@ -222,6 +222,28 @@ export const MessagesPageSchema = z.strictObject({
   newerCursor: z.number().int().nonnegative(),
 });
 
+// Runtime settings as the setup panel sees and changes them. The key is
+// never returned, only whether one is set.
+export const RuntimeSettingsSchema = z.strictObject({
+  kind: z.enum(['simulated', 'claude', 'openai']),
+  baseUrl: z.string().url().optional(),
+  model: z.string().min(1).optional(),
+  tools: z.enum(['basic', 'full']).optional(),
+  keyPresent: z.boolean(),
+  claudeKeyPresent: z.boolean(),
+  // Where settings are saved for next start; absent when not writable.
+  envFile: z.string().min(1).optional(),
+});
+
+export const RuntimeUpdateSchema = z.strictObject({
+  kind: z.enum(['simulated', 'claude', 'openai']),
+  baseUrl: z.string().url().optional(),
+  model: z.string().min(1).optional(),
+  tools: z.enum(['basic', 'full']).optional(),
+  // Only sent when the user typed a new one; empty keeps the current key.
+  apiKey: z.string().optional(),
+});
+
 // One file from the attached folder, for the artifacts viewer.
 export const ProjectFileSchema = z.strictObject({
   path: z.string().min(1),
@@ -247,6 +269,8 @@ export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
+export type RuntimeSettings = z.infer<typeof RuntimeSettingsSchema>;
+export type RuntimeUpdate = z.infer<typeof RuntimeUpdateSchema>;
 export type AttachRepositoryCommand = z.infer<
   typeof AttachRepositoryCommandSchema
 >;

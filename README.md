@@ -37,6 +37,10 @@ The product surface is a set of **conversations on one persisted project stream*
 
 The Increment 2 demo run (`/api/workspace`, `/api/demo-runs`, the "Plan demo" menu in the client) is a **compatibility path** kept for its regression tests; new work does not use the run stream. Real repository scanning and a live provider remain the next seam; no live provider is connected.
 
+### Runtime setup panel
+
+The start screen shows where agents run and a **change** link that opens a setup panel: Simulated, an open model (Groq free tier or Ollama presets, or any OpenAI-compatible endpoint, with the key entered there), or Claude (needs `ANTHROPIC_API_KEY` in the shell). Changes apply at once (`POST /api/runtime`) and are saved to `.env.local` when the app was started through `npm run dev` / `npm start`. Keys are written, never read back; `GET /api/runtime` only says whether one is set.
+
 ### Configuration file
 
 Copy `.env.example` to `.env.local` (git-ignored) and fill in what you use; `npm run dev`, `npm start`, and `npm run smoke:local` read it. Variables already exported in the shell take precedence. Never commit keys.

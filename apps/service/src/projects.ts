@@ -313,8 +313,8 @@ export class ProjectService {
   private readonly now: () => string;
   readonly folders: FolderOptions;
   private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
-  private readonly runtime: RuntimeInfo;
-  private readonly runner: TaskRunner;
+  private runtime: RuntimeInfo;
+  private runner: TaskRunner;
   // Live runs by task id, and the permission waits they are paused on.
   private readonly liveRuns = new Map<
     string,
@@ -342,6 +342,18 @@ export class ProjectService {
 
   get isLive(): boolean {
     return this.runtime.mode === 'live';
+  }
+
+  // Switches what runs future tasks. Tasks already running keep going on
+  // the runner they started with.
+  setRuntime(runtime: RuntimeInfo, runner?: TaskRunner): void {
+    this.runtime = runtime;
+    if (runner) this.runner = runner;
+    if (runtime.mode === 'live') {
+      for (const projection of this.store.listProjections()) {
+        this.reconcileLiveRuns(projection.projectId);
+      }
+    }
   }
 
   // Resolves once every in-flight reply for the project has landed.

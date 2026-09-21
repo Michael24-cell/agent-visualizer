@@ -11,6 +11,9 @@ import {
   type PlanSectionId,
   type ProjectFile,
   ProjectFileSchema,
+  type RuntimeSettings,
+  type RuntimeUpdate,
+  RuntimeSettingsSchema,
   type CommandResponse,
   type FolderListing,
   type MessagesPage,
@@ -381,6 +384,32 @@ export async function readProjectFile(
       )
     ).json(),
   );
+}
+
+export async function readRuntime(): Promise<RuntimeSettings> {
+  return RuntimeSettingsSchema.parse(
+    await (await request('/api/runtime')).json(),
+  );
+}
+
+export async function updateRuntime(
+  update: RuntimeUpdate,
+): Promise<RuntimeSettings> {
+  return RuntimeSettingsSchema.parse(
+    await (
+      await request('/api/runtime', {
+        method: 'POST',
+        body: JSON.stringify(update),
+      })
+    ).json(),
+  );
+}
+
+export async function listRuntimeModels(): Promise<string[]> {
+  const body = (await (await request('/api/runtime/models')).json()) as {
+    models?: string[];
+  };
+  return body.models ?? [];
 }
 
 export async function readEvents(

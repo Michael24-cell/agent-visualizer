@@ -201,3 +201,28 @@ export function editorLabel(source: DocumentEditSource | undefined): string {
   if (source === 'agent') return 'agent';
   return 'you';
 }
+
+// Folders used by existing projects, most recently created first, so the
+// start screen can offer them as one click.
+export function recentFolders(
+  projects:
+    | ProjectResponse['projection']['project'][]
+    | { project: ProjectResponse['projection']['project'] }[],
+  limit = 5,
+): string[] {
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  const list = projects.map((entry) =>
+    'project' in entry ? entry.project : entry,
+  );
+  for (const project of [...list].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  )) {
+    const path = project.repository?.path;
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+    if (paths.length >= limit) break;
+  }
+  return paths;
+}
