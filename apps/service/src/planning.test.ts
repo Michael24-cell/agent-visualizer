@@ -342,6 +342,7 @@ describe('dispersal through the coordinator', () => {
     const after = await api.project(projectId);
     expect(after.projection.lastSequence).toBe(before.projection.lastSequence);
     expect(Object.values(after.projection.agents).map((a) => a.name)).toEqual([
+      'Agent 1',
       'Backend orchestration',
     ]);
     expect(Object.values(after.projection.tasks)).toHaveLength(1);
@@ -374,7 +375,7 @@ describe('dispersal through the coordinator', () => {
     expect(store.getProjection(pid)?.lastSequence).toBe(
       stopped.project.projection.lastSequence,
     );
-    expect(Object.keys(store.getProjection(pid)!.agents)).toHaveLength(1);
+    expect(Object.keys(store.getProjection(pid)!.agents)).toHaveLength(2);
     const retried = service.decideProposal(pid, proposal.id, {
       commandId: id as never,
       expectedSequence: openProposal.lastSequence,

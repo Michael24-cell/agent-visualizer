@@ -27,6 +27,7 @@ import {
   ProjectResponseSchema,
   ProposalDecisionCommandSchema,
   ProposalIdSchema,
+  RenameAgentCommandSchema,
   SetAgentModelCommandSchema,
 } from '@harness/contracts';
 import { METHOD_CATALOG } from '@harness/runtime-simulated';
@@ -358,6 +359,26 @@ export function registerProjectRoutes(
           params.data.projectId,
           params.data.agentId,
           params.data.askId,
+          command.data,
+        ),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return CommandResponseSchema.parse(result.value);
+    },
+  );
+
+  service.post(
+    '/api/projects/:projectId/agents/:agentId/name',
+    async (request, reply) => {
+      const params = AgentParams.safeParse(request.params);
+      const command = RenameAgentCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('rename command'));
+      }
+      const result = handle(() =>
+        projects.renameAgent(
+          params.data.projectId,
+          params.data.agentId,
           command.data,
         ),
       );

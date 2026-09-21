@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { lineDiff } from './diff.js';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 // The tools a local model gets. Every path is confined to the task's
@@ -15,6 +16,8 @@ export interface ToolContext {
 export interface ToolResult {
   readonly text: string;
   readonly isError?: boolean;
+  // For file changes: what changed, as a small line diff.
+  readonly diff?: string;
 }
 
 export interface ToolDefinition {
@@ -264,11 +267,13 @@ export const editTool: ToolDefinition = {
         isError: true,
       };
     }
-    await writeFile(
-      path,
-      content.slice(0, first) + newText + content.slice(first + oldText.length),
-    );
-    return { text: `Edited ${str(input, 'path')}.` };
+    const next =
+      content.slice(0, first) + newText + content.slice(first + oldText.length);
+    await writeFile(path, next);
+    return {
+      text: `Edited ${str(input, 'path')}.`,
+      diff: lineDiff(content, next),
+    };
   },
 };
 
@@ -284,8 +289,14 @@ export const writeTool: ToolDefinition = {
   needsPermission: true,
   async run(input, context) {
     const path = insideFolder(context.cwd, str(input, 'path'));
-    await writeFile(path, str(input, 'content'));
-    return { text: `Wrote ${str(input, 'path')}.` };
+    const next = str(input, 'content');
+    const previous = await readFile(path, 'utf8').catch(() => '');
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, next);
+    return {
+      text: `${previous ? 'Wrote' : 'Created'} ${str(input, 'path')}.`,
+      diff: lineDiff(previous, next),
+    };
   },
 };
 

@@ -297,6 +297,7 @@ export type AgentStepIntent =
       digest: string;
       // Path inside the attached folder when the output is a file.
       location?: string;
+      diff?: string;
     }
   | {
       kind: 'check_pass';

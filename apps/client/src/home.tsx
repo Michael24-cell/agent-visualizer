@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { ProjectListResponse, RuntimeSettings } from '@harness/contracts';
-import { createAgent, createProject, postMessage } from './api';
+import { createProject, postMessage } from './api';
 import { FolderPicker } from './folder-picker';
 import {
   nameFromRequest,
@@ -45,18 +45,11 @@ export function Home({
       const created = await createProject(nameFromRequest(body), folder);
       const projectId = created.project.projection.projectId;
       if (folder) {
-        // A folder means work: one agent, and the words are its task.
-        const agent = await createAgent(
-          projectId,
-          created.project.projection.lastSequence,
-          'Agent 1',
-          'neutral',
-        );
-        const agentId = agent.receipt.createdIds.agents?.[0];
-        const thread = agentId
-          ? agent.project.projection.threads[
-              agent.project.projection.agents[agentId]!.threadId
-            ]
+        // A folder means work: the words are the default agent's task.
+        const agent = Object.values(created.project.projection.agents)[0];
+        const agentId = agent?.id;
+        const thread = agent
+          ? created.project.projection.threads[agent.threadId]
           : undefined;
         if (agentId && thread) {
           await postMessage(projectId, agentId, {

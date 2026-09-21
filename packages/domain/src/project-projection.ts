@@ -684,6 +684,19 @@ export function applyProjectEvent(
       break;
     }
 
+    case 'agent.renamed': {
+      const agent = requireAgent(next, event.payload.agentId);
+      if (agent.name === event.payload.name) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Agent ${agent.id} is already called ${agent.name}.`,
+        );
+      }
+      next.agents[agent.id] = { ...agent, name: event.payload.name };
+      targets.agent(agent.id);
+      break;
+    }
+
     case 'agent.model_changed': {
       const agent = requireAgent(next, event.payload.agentId);
       if (agent.model === event.payload.model) {

@@ -26,6 +26,7 @@ import {
   postMessage,
   readMessages,
   readProject,
+  renameAgent,
   setAgentModel,
   stopAgent,
 } from './api';
@@ -223,6 +224,67 @@ function AskCard({
   );
 }
 
+// The agent's name in the pane header; click to rename.
+function AgentName({
+  name,
+  busy,
+  onRename,
+}: {
+  name: string;
+  busy: boolean;
+  onRename: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="pane-name"
+        title="Rename"
+        disabled={busy}
+        onClick={() => {
+          setDraft(name);
+          setEditing(true);
+        }}
+      >
+        {name}
+      </button>
+    );
+  }
+  const commit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next && next !== name) onRename(next);
+  };
+  return (
+    <input
+      className="pane-name-input"
+      autoFocus
+      value={draft}
+      maxLength={80}
+      aria-label="Agent name"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit();
+        if (event.key === 'Escape') setEditing(false);
+      }}
+    />
+  );
+}
+
+function diffSummary(diff: string): string {
+  if (diff.startsWith('(diff too large')) return diff;
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+')) added += 1;
+    else if (line.startsWith('-')) removed += 1;
+  }
+  return `+${added} −${removed} · show diff`;
+}
+
 // What an agent did with a tool, as one row in the conversation: reads
 // and searches, commands with their outcome, files written.
 type ToolRow =
@@ -330,8 +392,44 @@ function ToolRowView({
             <span className="tool-target">{output.title}</span>
           )}
           {output.digest &&
-          !/^(Wrote|Edited|Edit applied)/.test(output.digest) ? (
+          !/^(Wrote|Edited|Created|Edit applied)/.test(output.digest) ? (
             <span className="tool-note">{output.digest}</span>
+          ) : null}
+          {output.diff ? (
+            <button
+              type="button"
+              className={`tool-result ${open ? 'is-open' : ''}`}
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+            >
+              <span className="tool-elbow" aria-hidden="true">
+                ⎿
+              </span>
+              {open ? (
+                <span className="tool-diff">
+                  {output.diff.split('\n').map((line, index) => (
+                    <span
+                      key={index}
+                      className={
+                        line.startsWith('+')
+                          ? 'diff-add'
+                          : line.startsWith('-')
+                            ? 'diff-del'
+                            : line === '…'
+                              ? 'diff-gap'
+                              : 'diff-ctx'
+                      }
+                    >
+                      {line}
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="tool-result-text">
+                  {diffSummary(output.diff)}
+                </span>
+              )}
+            </button>
           ) : null}
         </li>
       );
@@ -360,6 +458,7 @@ export function LivePane({
   const [olderCursor, setOlderCursor] = useState<number>();
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dismissedFailure, setDismissedFailure] = useState<string>();
   const [value, setValue] = useState('');
   const [feedback, setFeedback] = useState<string>();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -411,6 +510,15 @@ export function LivePane({
     }
     return page.messages.length;
   };
+
+  // The thread moved (a refresh, another pane, the model finishing while
+  // we were not polling): fetch what we do not have yet.
+  const threadSequence = target.thread.lastSequence;
+  useEffect(() => {
+    if (!loaded || threadSequence <= newestRef.current) return;
+    void appendNewer().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadSequence, loaded]);
 
   // While the service is producing a reply for this thread, poll for it.
   // Stops on its own when the project says the thread is no longer busy.
@@ -622,7 +730,22 @@ export function LivePane({
     >
       <header className="pane-header">
         <span className="cat-dot" aria-hidden="true" />
-        <strong>{title}</strong>
+        {target.kind === 'agent' ? (
+          <AgentName
+            name={title}
+            busy={busy}
+            onRename={(name) => {
+              const agent = target.agent;
+              void run(
+                () =>
+                  renameAgent(projectId, agent.id, agent.lastSequence, name),
+                `Renamed to ${name}.`,
+              );
+            }}
+          />
+        ) : (
+          <strong>{title}</strong>
+        )}
         <span className="pane-task">
           {target.kind === 'agent'
             ? (currentTask?.title ?? 'Nothing in progress — type what to do')
@@ -792,6 +915,33 @@ export function LivePane({
           ))}
         </ol>
       </div>
+      {currentTask?.state === 'failed' &&
+      dismissedFailure !== currentTask.id ? (
+        <div className="pane-failure" role="alert">
+          <strong>Failed</strong>
+          <span className="pane-failure-reason">
+            {currentTask.endReason ?? 'No reason was recorded.'}
+          </span>
+          <button
+            type="button"
+            className="secondary-action small"
+            onClick={() => {
+              setValue(currentTask.objective);
+              inputRef.current?.focus();
+            }}
+          >
+            Start again
+          </button>
+          <button
+            type="button"
+            className="pane-close"
+            aria-label="Dismiss"
+            onClick={() => setDismissedFailure(currentTask.id)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       <form
         className={`composer category-${category}`}
         onSubmit={submit}

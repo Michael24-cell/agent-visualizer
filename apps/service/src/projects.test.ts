@@ -115,14 +115,19 @@ describe('projects and the coordinator thread', () => {
   it('creates a project with an open coordinator thread and a first message, atomically and idempotently', async () => {
     const api = client(testConfig());
     const { created, commandId: id, projectId } = await createProject(api);
+    // project.created, thread.opened, message.posted, then the default
+    // agent's thread and agent.created.
     expect(created.receipt).toMatchObject({
       firstSequence: 1,
-      lastSequence: 3,
+      lastSequence: 5,
       replayed: false,
     });
     const threads = Object.values(created.project.projection.threads);
-    expect(threads).toHaveLength(1);
+    expect(threads).toHaveLength(2);
     expect(threads[0]).toMatchObject({ kind: 'coordinator', messageCount: 1 });
+    expect(Object.values(created.project.projection.agents)).toMatchObject([
+      { name: 'Agent 1', work: 'idle' },
+    ]);
     expect(created.project.summary.status).toBe('intake');
     expect(created.project.brief.markdown).toContain('# Demo');
 
@@ -135,7 +140,7 @@ describe('projects and the coordinator thread', () => {
     expect(retry.json().receipt).toMatchObject({
       commandId: id,
       firstSequence: 1,
-      lastSequence: 3,
+      lastSequence: 5,
       replayed: true,
     });
     expect((await api.get('/api/projects')).json().projects).toHaveLength(1);
@@ -375,12 +380,13 @@ describe('one independent agent thread', () => {
     );
     expect(wrongProject.statusCode).toBe(400);
     expect(wrongProject.json().code).toBe('project_mismatch');
+    // Only the default agent; the replayed dispersal added nothing.
     expect(
       Object.values(
         (await api.get(`/api/projects/${second.projectId}`)).json().projection
           .agents,
-      ),
-    ).toEqual([]);
+      ).map((a) => (a as { name: string }).name),
+    ).toEqual(['Agent 1']);
     await api.service.close();
   });
 

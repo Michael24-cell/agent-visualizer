@@ -451,6 +451,8 @@ export const OutputSchema = z.strictObject({
   title: z.string().min(1),
   digest: z.string().min(1),
   location: z.string().min(1).optional(),
+  // What changed, as a small line diff, when the runtime can tell.
+  diff: z.string().min(1).max(20_000).optional(),
   producedAtSequence: SequenceSchema,
 });
 

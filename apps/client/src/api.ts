@@ -199,6 +199,26 @@ export async function createAgent(
   );
 }
 
+export async function renameAgent(
+  projectId: string,
+  agentId: string,
+  expectedSequence: number,
+  name: string,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/agents/${agentId}/name`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          name,
+        }),
+      })
+    ).json(),
+  );
+}
+
 export async function setAgentModel(
   projectId: string,
   agentId: string,

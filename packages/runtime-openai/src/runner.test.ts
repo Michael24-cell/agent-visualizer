@@ -153,6 +153,7 @@ describe('runOpenAiTask', () => {
           title: 'src/app.ts',
           digest: 'Edited src/app.ts.',
           location: 'src/app.ts',
+          diff: '-export const greeting = "hi";\n+export const greeting = "hello";',
         },
       ],
       [{ kind: 'finish', reason: 'Renamed the greeting and verified.' }],

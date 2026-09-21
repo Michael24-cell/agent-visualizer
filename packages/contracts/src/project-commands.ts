@@ -64,6 +64,12 @@ export const CreateAgentCommandSchema = z.strictObject({
 });
 
 // Targets an agent; expectedSequence is that agent's lastSequence.
+export const RenameAgentCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  name: z.string().trim().min(1).max(80),
+});
+
+// Targets an agent; expectedSequence is that agent's lastSequence.
 export const SetAgentModelCommandSchema = z.strictObject({
   ...CommandBaseShape,
   model: AgentModelSchema,
@@ -266,6 +272,7 @@ export const BriefRequestRefSchema = z.strictObject({
 export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
+export type RenameAgentCommand = z.infer<typeof RenameAgentCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;

@@ -371,7 +371,7 @@ export function runOpenAiTask(
 function intentsFor(
   tool: ToolDefinition,
   args: Record<string, unknown>,
-  result: { text: string; isError?: boolean },
+  result: { text: string; isError?: boolean; diff?: string },
 ): AgentStepIntent[] {
   const summary = clip(result.text, SUMMARY_MAX) || '(no output)';
   switch (tool.sdkName) {
@@ -445,6 +445,7 @@ function intentsFor(
           ),
           digest: summary,
           ...(typeof args.path === 'string' ? { location: args.path } : {}),
+          ...(result.diff ? { diff: result.diff } : {}),
         },
       ];
     default:

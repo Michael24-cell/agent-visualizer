@@ -5736,3 +5736,92 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* Rename in the pane header. */
+.pane-name {
+  flex: 0 1 auto;
+  min-width: 40px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.pane-name:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.pane-name-input {
+  flex: 0 1 200px;
+  min-width: 80px;
+  height: 26px;
+  padding: 0 6px;
+  margin-left: -6px;
+  border: 1px solid rgba(var(--silver-rgb), 0.45);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Diff inside a Write row. */
+.tool-diff {
+  display: grid;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-add {
+  color: var(--green);
+}
+.diff-del {
+  color: var(--coral);
+}
+.diff-ctx {
+  color: var(--text-muted);
+}
+.diff-gap {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* A failed task, pinned above the composer until dismissed. */
+.pane-failure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 18px 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 124, 138, 0.35);
+  border-left: 3px solid var(--coral);
+  border-radius: 10px;
+  background: rgba(255, 124, 138, 0.06);
+  font-size: 13px;
+}
+.pane-failure strong {
+  color: var(--coral);
+}
+.pane-failure-reason {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.pane-failure .pane-close {
+  margin-left: 0;
+}

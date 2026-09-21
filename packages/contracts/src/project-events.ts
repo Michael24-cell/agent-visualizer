@@ -145,6 +145,10 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
 
   projectEvent('agent.created', z.strictObject({ agent: AgentSchema })),
   projectEvent(
+    'agent.renamed',
+    z.strictObject({ agentId: AgentIdSchema, name: z.string().min(1).max(80) }),
+  ),
+  projectEvent(
     'agent.model_changed',
     z.strictObject({ agentId: AgentIdSchema, model: AgentModelSchema }),
   ),

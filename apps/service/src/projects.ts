@@ -42,6 +42,7 @@ import {
   type PlanTask,
   type PlanSectionCommand,
   type ProjectFile,
+  type RenameAgentCommand,
   type PostMessageCommand,
   type ProjectEvent,
   type ProjectId,
@@ -964,7 +965,46 @@ export class ProjectService {
       coordinatorAuthor,
       coordinatorGreeting(name),
     );
+    // Every project starts with one agent pane you can type into; the
+    // demo project adds its own named agents afterwards.
+    if (origin === 'user') {
+      this.addAgent(batch, projectId, `${safe(commandId)}_agent1`, {
+        name: 'Agent 1',
+        category: 'neutral',
+      });
+    }
     return batch.commit();
+  }
+
+  renameAgent(
+    projectId: ProjectId,
+    agentId: AgentId,
+    command: RenameAgentCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      const agent = projection.agents[agentId];
+      if (!agent)
+        throw new ProjectCommandError('not_found', 'Agent was not found.');
+      this.assertSequence(
+        'Agent',
+        agent.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        'agent.renamed',
+        { agentId, name: command.name },
+        { agentId, source: 'user' },
+      );
+      return batch.commit();
+    });
   }
 
   createAgent(
@@ -2313,6 +2353,7 @@ export class ProjectService {
               title: intent.title,
               digest: intent.digest,
               ...(intent.location ? { location: intent.location } : {}),
+              ...(intent.diff ? { diff: intent.diff.slice(0, 20_000) } : {}),
               producedAtSequence: batch.nextSequence(),
             },
           },
