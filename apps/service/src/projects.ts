@@ -37,6 +37,7 @@ import {
   type Plan,
   type PlanTask,
   type PlanSectionCommand,
+  type ProjectFile,
   type PostMessageCommand,
   type ProjectEvent,
   type ProjectId,
@@ -88,6 +89,9 @@ import {
   type LiveTaskSink,
 } from '@harness/runtime-claude';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import { extname } from 'node:path';
+import { insideFolder } from '@harness/runtime-openai';
 import type { z } from 'zod';
 import { renderBrief } from './brief.js';
 import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
@@ -374,6 +378,48 @@ export class ProjectService {
   }
 
   // --- Reads ---------------------------------------------------------------
+
+  // A file from the attached folder, for viewing what agents wrote.
+  readProjectFile(projectId: ProjectId, path: string): ProjectFile {
+    const projection = this.requireProjection(projectId);
+    const repository = projection.project.repository;
+    if (!repository) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'This project has no folder attached.',
+      );
+    }
+    let resolved: string;
+    try {
+      resolved = insideFolder(repository.path, path);
+    } catch {
+      throw new ProjectCommandError(
+        'folder_not_allowed',
+        `${path} is outside the attached folder.`,
+      );
+    }
+    let stats;
+    try {
+      stats = statSync(resolved);
+    } catch {
+      throw new ProjectCommandError('not_found', `${path} was not found.`);
+    }
+    if (!stats.isFile()) {
+      throw new ProjectCommandError('not_found', `${path} is not a file.`);
+    }
+    const limit = 512 * 1024;
+    const buffer = readFileSync(resolved);
+    const binary = buffer.subarray(0, 8_000).includes(0);
+    const text = binary ? '' : buffer.subarray(0, limit).toString('utf8');
+    return {
+      path,
+      kind: binary ? 'binary' : fileKind(path),
+      content: text,
+      size: stats.size,
+      truncated: !binary && buffer.length > limit,
+      modifiedAt: stats.mtime.toISOString(),
+    };
+  }
 
   requireProjection(projectId: ProjectId): ProjectProjection {
     const projection = this.store.getProjection(projectId);
@@ -2151,6 +2197,7 @@ export class ProjectService {
               kind: intent.outputKind,
               title: intent.title,
               digest: intent.digest,
+              ...(intent.location ? { location: intent.location } : {}),
               producedAtSequence: batch.nextSequence(),
             },
           },
@@ -2555,6 +2602,46 @@ export class ProjectService {
     });
     return batch.commit().projection;
   }
+}
+
+function fileKind(path: string): ProjectFile['kind'] {
+  const extension = extname(path).toLowerCase();
+  if (['.md', '.markdown', '.mdx'].includes(extension)) return 'markdown';
+  if (['.html', '.htm'].includes(extension)) return 'html';
+  if (
+    [
+      '.ts',
+      '.tsx',
+      '.js',
+      '.jsx',
+      '.mjs',
+      '.cjs',
+      '.json',
+      '.css',
+      '.scss',
+      '.py',
+      '.rb',
+      '.go',
+      '.rs',
+      '.java',
+      '.kt',
+      '.swift',
+      '.c',
+      '.h',
+      '.cpp',
+      '.cs',
+      '.php',
+      '.sh',
+      '.yml',
+      '.yaml',
+      '.toml',
+      '.sql',
+      '.xml',
+      '.svg',
+    ].includes(extension)
+  )
+    return 'code';
+  return 'text';
 }
 
 // Reducer rejections surface as command errors with the closest code.

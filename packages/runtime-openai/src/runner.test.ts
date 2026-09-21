@@ -152,6 +152,7 @@ describe('runOpenAiTask', () => {
           outputKind: 'diff',
           title: 'src/app.ts',
           digest: 'Edited src/app.ts.',
+          location: 'src/app.ts',
         },
       ],
       [{ kind: 'finish', reason: 'Renamed the greeting and verified.' }],

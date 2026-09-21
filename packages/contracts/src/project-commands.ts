@@ -222,6 +222,16 @@ export const MessagesPageSchema = z.strictObject({
   newerCursor: z.number().int().nonnegative(),
 });
 
+// One file from the attached folder, for the artifacts viewer.
+export const ProjectFileSchema = z.strictObject({
+  path: z.string().min(1),
+  kind: z.enum(['markdown', 'html', 'code', 'text', 'binary']),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  modifiedAt: z.iso.datetime(),
+});
+
 export const ProjectEventsPageSchema = z.strictObject({
   events: z.array(ProjectEventSchema),
   cursor: z.number().int().nonnegative(),
@@ -236,6 +246,7 @@ export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
+export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 export type AttachRepositoryCommand = z.infer<
   typeof AttachRepositoryCommandSchema
 >;

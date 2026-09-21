@@ -9,6 +9,8 @@ import {
   type AgentModel,
   type BriefFieldId,
   type PlanSectionId,
+  type ProjectFile,
+  ProjectFileSchema,
   type CommandResponse,
   type FolderListing,
   type MessagesPage,
@@ -364,6 +366,19 @@ export async function updateBriefField(
           ...(value ? { value } : {}),
         }),
       })
+    ).json(),
+  );
+}
+
+export async function readProjectFile(
+  projectId: string,
+  path: string,
+): Promise<ProjectFile> {
+  return ProjectFileSchema.parse(
+    await (
+      await request(
+        `/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`,
+      )
     ).json(),
   );
 }

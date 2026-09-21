@@ -203,4 +203,86 @@ describe('attaching a repository to a project', () => {
     expect(after.projection.project.repository?.name).toBe('day-01');
     await service.close();
   });
+
+  it('reads files from the attached folder and nothing outside it', async () => {
+    const root = fakeHome();
+    writeFileSync(join(root, 'wevolv', 'README.md'), '# Wevolv\n');
+    mkdirSync(join(root, 'wevolv', 'src'));
+    writeFileSync(join(root, 'wevolv', 'src', 'a.ts'), 'export const a = 1;\n');
+    writeFileSync(join(root, 'wevolv', 'blob.bin'), Buffer.from([0, 1, 2, 3]));
+    const service = createService(config(root));
+    const headers = {
+      origin: 'http://127.0.0.1:5173',
+      'x-harness-session': 'a'.repeat(64),
+    };
+    const get = (url: string): Promise<LightMyRequestResponse> =>
+      service.inject({ method: 'GET', url, headers });
+    const created = CommandResponseSchema.parse(
+      (
+        await service.inject({
+          method: 'POST',
+          url: '/api/projects',
+          headers,
+          payload: {
+            commandId: commandId(),
+            name: 'Files',
+            repositoryPath: join(root, 'wevolv'),
+          },
+        })
+      ).json(),
+    );
+    const projectId = created.project.projection.projectId;
+    const readme = (
+      await get(`/api/projects/${projectId}/files?path=README.md`)
+    ).json();
+    expect(readme).toMatchObject({
+      path: 'README.md',
+      kind: 'markdown',
+      content: '# Wevolv\n',
+      size: 9,
+      truncated: false,
+    });
+    expect(
+      (await get(`/api/projects/${projectId}/files?path=src/a.ts`)).json(),
+    ).toMatchObject({
+      kind: 'code',
+    });
+    expect(
+      (await get(`/api/projects/${projectId}/files?path=blob.bin`)).json(),
+    ).toMatchObject({
+      kind: 'binary',
+      content: '',
+    });
+    expect(
+      (await get(`/api/projects/${projectId}/files?path=missing.md`))
+        .statusCode,
+    ).toBe(404);
+    expect(
+      (await get(`/api/projects/${projectId}/files?path=../day-01/README.md`))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await get(`/api/projects/${projectId}/files?path=/etc/passwd`))
+        .statusCode,
+    ).toBe(403);
+
+    // No folder attached: told plainly.
+    const plain = CommandResponseSchema.parse(
+      (
+        await service.inject({
+          method: 'POST',
+          url: '/api/projects',
+          headers,
+          payload: { commandId: commandId(), name: 'Plain' },
+        })
+      ).json(),
+    );
+    expect(
+      (
+        await get(
+          `/api/projects/${plain.project.projection.projectId}/files?path=README.md`,
+        )
+      ).statusCode,
+    ).toBe(409);
+  });
 });

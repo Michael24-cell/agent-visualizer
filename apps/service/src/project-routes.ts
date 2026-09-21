@@ -21,6 +21,7 @@ import {
   MessagesQuerySchema,
   PostMessageCommandSchema,
   ProjectEventsPageSchema,
+  ProjectFileSchema,
   ProjectIdSchema,
   ProjectListResponseSchema,
   ProjectResponseSchema,
@@ -178,6 +179,21 @@ export function registerProjectRoutes(
         .send(CommandResponseSchema.parse(result.value));
     },
   );
+
+  service.get('/api/projects/:projectId/files', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    const query = z
+      .strictObject({ path: z.string().min(1).max(1_000) })
+      .safeParse(request.query);
+    if (!params.success || !query.success) {
+      return reply.code(400).send(invalid('file path'));
+    }
+    const result = handle(() =>
+      projects.readProjectFile(params.data.projectId, query.data.path),
+    );
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return ProjectFileSchema.parse(result.value);
+  });
 
   service.get('/api/folders', async (request, reply) => {
     const query = z

@@ -127,6 +127,7 @@ describe('ClaudeMessageMapper', () => {
         outputKind: 'diff',
         title: 'src/app.ts',
         digest: 'Edit applied.',
+        location: 'src/app.ts',
       },
     ]);
   });

@@ -173,3 +173,23 @@ export function agentsNote(project: ProjectResponse): string {
   const active = counts.working + counts.waiting + counts.needs_you;
   return total ? `${total} · ${active} active` : 'none yet';
 }
+
+// Files agents wrote, newest first, from outputs that carry a location.
+export function artifactPaths(project: ProjectResponse): string[] {
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const output of Object.values(project.projection.outputs).sort(
+    (a, b) => b.producedAtSequence - a.producedAtSequence,
+  )) {
+    if (!output.location || seen.has(output.location)) continue;
+    seen.add(output.location);
+    paths.push(output.location);
+  }
+  return paths;
+}
+
+export function artifactsNote(project: ProjectResponse): string {
+  const count = artifactPaths(project).length;
+  if (!count) return 'nothing written yet';
+  return `${count} ${count === 1 ? 'file' : 'files'}`;
+}

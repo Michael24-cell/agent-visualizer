@@ -11,6 +11,7 @@ import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
 import { LivePane } from './live-pane';
 import {
   agentsNote,
+  artifactsNote,
   briefNote,
   methodNote,
   planNote,
@@ -59,6 +60,11 @@ export function Workspace({
     () => typeof window === 'undefined' || window.innerWidth > 960,
   );
   const [detail, setDetail] = useState<DetailItem>();
+  const [artifact, setArtifact] = useState<string>();
+  const openArtifact = (path: string) => {
+    setArtifact(path);
+    setDetail('artifacts');
+  };
   const [picking, setPicking] = useState(false);
   const repository = project.projection.project.repository;
 
@@ -145,6 +151,7 @@ export function Workspace({
     { id: 'method', label: 'Method', note: methodNote(project) },
     { id: 'plan', label: 'Plan', note: planNote(project) },
     { id: 'agents', label: 'Agents', note: agentsNote(project) },
+    { id: 'artifacts', label: 'Artifacts', note: artifactsNote(project) },
     {
       id: 'history',
       label: 'History',
@@ -360,6 +367,7 @@ export function Workspace({
               canClose={openTargets.length > 1}
               onProject={updateProject}
               onClose={() => close(liveTargetId(target))}
+              onOpenArtifact={openArtifact}
             />
           </div>
         ))}
@@ -368,6 +376,8 @@ export function Workspace({
       {detail ? (
         <ProjectDetail
           item={detail}
+          artifact={artifact}
+          onSelectArtifact={setArtifact}
           project={project}
           busy={false}
           onProject={updateProject}

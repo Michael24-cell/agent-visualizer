@@ -70,6 +70,14 @@ function commandLabel(input: Record<string, unknown>): string {
   return clip(command, TITLE_MAX);
 }
 
+function rawPath(input: Record<string, unknown>): string | undefined {
+  return (
+    stringOf(input.file_path) ??
+    stringOf(input.notebook_path) ??
+    stringOf(input.path)
+  );
+}
+
 function pathLabel(input: Record<string, unknown>): string {
   const path =
     stringOf(input.file_path) ??
@@ -85,6 +93,9 @@ export class ClaudeMessageMapper {
   private readonly pending = new Map<string, PendingToolUse>();
   private finished = false;
   private lastSaid = '';
+
+  // The task folder, so file outputs carry a path relative to it.
+  constructor(private readonly cwd?: string) {}
 
   get isFinished(): boolean {
     return this.finished;
@@ -171,11 +182,13 @@ export class ClaudeMessageMapper {
               },
         );
       } else if (WRITE_TOOLS.has(call.name) && !failed) {
+        const location = this.relative(rawPath(call.input));
         intents.push({
           kind: 'output',
           outputKind: 'diff',
-          title: pathLabel(call.input),
+          title: location ? clip(location, TITLE_MAX) : pathLabel(call.input),
           digest: nonEmpty(text, `${call.name} applied.`),
+          ...(location ? { location } : {}),
         });
       } else if (READ_TOOLS[call.name] && !failed) {
         intents.push({
@@ -187,6 +200,13 @@ export class ClaudeMessageMapper {
       }
     }
     return intents;
+  }
+
+  private relative(path: string | undefined): string | undefined {
+    if (!path) return undefined;
+    if (!this.cwd) return path;
+    const root = this.cwd.endsWith('/') ? this.cwd : `${this.cwd}/`;
+    return path.startsWith(root) ? path.slice(root.length) : path;
   }
 
   private mapResult(

@@ -5462,3 +5462,93 @@ button:disabled {
   display: grid;
   gap: 3px;
 }
+
+/* Artifacts: files agents wrote. */
+.artifacts {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.artifact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.artifact-list button {
+  padding: 4px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+.artifact-list button:hover {
+  color: var(--text);
+}
+.artifact-list button[aria-pressed='true'] {
+  border-color: rgba(var(--silver-rgb), 0.5);
+  background: rgba(var(--silver-rgb), 0.08);
+  color: var(--text);
+}
+.artifact {
+  display: grid;
+  gap: 8px;
+}
+.artifact-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.artifact-head code {
+  font-size: 12px;
+  color: var(--text);
+}
+.artifact-toggle {
+  justify-self: end;
+  font-size: 12px;
+}
+.artifact-code {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  overflow: auto;
+  max-height: 70vh;
+  font-size: 12.5px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+.artifact-markdown {
+  padding: 4px 2px;
+}
+.artifact-frame {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #fff;
+}
+.tool-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.tool-link:hover {
+  text-decoration-color: var(--silver);
+}

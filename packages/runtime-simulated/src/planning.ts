@@ -295,6 +295,8 @@ export type AgentStepIntent =
       outputKind: 'contract' | 'diff' | 'note' | 'report';
       title: string;
       digest: string;
+      // Path inside the attached folder when the output is a file.
+      location?: string;
     }
   | {
       kind: 'check_pass';

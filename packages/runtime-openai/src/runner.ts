@@ -393,6 +393,7 @@ function intentsFor(
             TITLE_MAX,
           ),
           digest: summary,
+          ...(typeof args.path === 'string' ? { location: args.path } : {}),
         },
       ];
     default:

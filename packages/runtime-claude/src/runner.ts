@@ -100,7 +100,7 @@ export function runLiveTask(
   };
 
   const done = (async () => {
-    const mapper = new ClaudeMessageMapper();
+    const mapper = new ClaudeMessageMapper(input.cwd);
     try {
       for await (const frame of source(input, {
         canUseTool,

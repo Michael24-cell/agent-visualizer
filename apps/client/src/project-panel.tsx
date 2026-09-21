@@ -21,9 +21,11 @@ import {
   readEvents,
   updateBriefField,
 } from './api';
+import { ArtifactsView } from './artifacts';
 import { DocumentSection } from './document-section';
 import { documentChanges, type DocumentChange } from './project-notes';
-export type DetailItem = 'brief' | 'method' | 'plan' | 'agents' | 'history';
+export type DetailItem =
+  'brief' | 'method' | 'plan' | 'agents' | 'artifacts' | 'history';
 import { workLabels } from './live';
 
 // The left panel for a persisted project: switch projects, start a new one,
@@ -657,14 +659,22 @@ interface DetailProps {
 
 export function ProjectDetail({
   item,
+  artifact,
+  onSelectArtifact,
   onClose,
   ...props
-}: DetailProps & { item: DetailItem; onClose: () => void }) {
+}: DetailProps & {
+  item: DetailItem;
+  artifact?: string | undefined;
+  onSelectArtifact?: ((path: string | undefined) => void) | undefined;
+  onClose: () => void;
+}) {
   const titles: Record<DetailItem, string> = {
     brief: 'Brief',
     method: 'Method',
     plan: 'Plan',
     agents: 'Agents',
+    artifacts: 'Artifacts',
     history: 'History',
   };
   return (
@@ -689,6 +699,13 @@ export function ProjectDetail({
         {item === 'method' ? <MethodView {...props} /> : null}
         {item === 'plan' ? <PlanView {...props} /> : null}
         {item === 'agents' ? <AgentsView {...props} /> : null}
+        {item === 'artifacts' ? (
+          <ArtifactsView
+            project={props.project}
+            selected={artifact}
+            onSelect={onSelectArtifact ?? (() => undefined)}
+          />
+        ) : null}
         {item === 'history' ? <HistoryView {...props} /> : null}
       </div>
     </aside>

@@ -251,7 +251,13 @@ function toolRows(project: ProjectResponse, agentId: string): ToolRow[] {
   return rows;
 }
 
-function ToolRowView({ row }: { row: ToolRow }) {
+function ToolRowView({
+  row,
+  onOpenArtifact,
+}: {
+  row: ToolRow;
+  onOpenArtifact?: ((path: string) => void) | undefined;
+}) {
   const [open, setOpen] = useState(false);
   switch (row.kind) {
     case 'activity':
@@ -311,7 +317,18 @@ function ToolRowView({ row }: { row: ToolRow }) {
           <span className="tool-name">
             {output.kind === 'diff' ? 'Write' : 'Output'}
           </span>
-          <span className="tool-target">{output.title}</span>
+          {output.location && onOpenArtifact ? (
+            <button
+              type="button"
+              className="tool-target tool-link"
+              title="Open in Artifacts"
+              onClick={() => onOpenArtifact(output.location!)}
+            >
+              {output.title}
+            </button>
+          ) : (
+            <span className="tool-target">{output.title}</span>
+          )}
           {output.digest &&
           !/^(Wrote|Edited|Edit applied)/.test(output.digest) ? (
             <span className="tool-note">{output.digest}</span>
@@ -328,12 +345,14 @@ export function LivePane({
   canClose,
   onProject,
   onClose,
+  onOpenArtifact,
 }: {
   project: ProjectResponse;
   target: LiveTarget;
   canClose: boolean;
   onProject: (next: ProjectResponse) => void;
   onClose: () => void;
+  onOpenArtifact?: (path: string) => void;
 }) {
   const projectId = project.projection.projectId;
   const threadRef = liveTargetId(target);
@@ -705,7 +724,13 @@ export function LivePane({
           ) : null}
           {timeline.map((entry) => {
             if (entry.kind !== 'message') {
-              return <ToolRowView key={`tool-${entry.sequence}`} row={entry} />;
+              return (
+                <ToolRowView
+                  key={`tool-${entry.sequence}`}
+                  row={entry}
+                  onOpenArtifact={onOpenArtifact}
+                />
+              );
             }
             const message = entry.message;
             const label = authorLabel(message, target);
