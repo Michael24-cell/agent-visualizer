@@ -469,6 +469,21 @@ export async function listRuntimeModels(): Promise<string[]> {
   return body.models ?? [];
 }
 
+export function projectFileUrl(projectId: string, path: string): string {
+  return `/api/projects/${projectId}/files/raw?path=${encodeURIComponent(path)}`;
+}
+
+export async function revealProjectFile(
+  projectId: string,
+  path: string,
+  mode: 'reveal' | 'open' = 'reveal',
+): Promise<void> {
+  await request(`/api/projects/${projectId}/files/reveal`, {
+    method: 'POST',
+    body: JSON.stringify({ path, mode }),
+  });
+}
+
 export async function readEvents(
   projectId: string,
   after = 0,

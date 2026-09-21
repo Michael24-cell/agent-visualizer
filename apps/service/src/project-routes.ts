@@ -33,8 +33,12 @@ import {
   SetAgentModelCommandSchema,
 } from '@harness/contracts';
 import { METHOD_CATALOG } from '@harness/runtime-simulated';
+import { execFile } from 'node:child_process';
+import { readFileSync, statSync } from 'node:fs';
+import { extname } from 'node:path';
 import { FolderError, listFolders } from './folders.js';
 import {
+  IMAGE_EXTENSIONS,
   ProjectCommandError,
   commandErrorStatus,
   type ProjectService,
@@ -197,6 +201,85 @@ export function registerProjectRoutes(
     if (!result.ok) return reply.code(result.status).send(result.body);
     return ProjectFileSchema.parse(result.value);
   });
+
+  // The file's bytes, for images (and anything else the viewer embeds).
+  service.get('/api/projects/:projectId/files/raw', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    // `v` is a cache-buster the viewer adds; it carries no meaning here.
+    const query = z
+      .object({ path: z.string().min(1).max(1_000), v: z.string().optional() })
+      .safeParse(request.query);
+    if (!params.success || !query.success) {
+      return reply.code(400).send(invalid('file path'));
+    }
+    const resolved = handle(() =>
+      projects.resolveProjectFile(params.data.projectId, query.data.path),
+    );
+    if (!resolved.ok) return reply.code(resolved.status).send(resolved.body);
+    let stats;
+    try {
+      stats = statSync(resolved.value);
+    } catch {
+      return reply.code(404).send(
+        CommandErrorSchema.parse({
+          error: `${query.data.path} was not found.`,
+          code: 'not_found',
+        }),
+      );
+    }
+    if (!stats.isFile() || stats.size > 15 * 1024 * 1024) {
+      return reply.code(413).send(
+        CommandErrorSchema.parse({
+          error: 'Only files up to 15 MB are served.',
+          code: 'invalid_command',
+        }),
+      );
+    }
+    const type =
+      IMAGE_EXTENSIONS[extname(query.data.path).toLowerCase()] ??
+      'application/octet-stream';
+    return reply
+      .type(type)
+      .header('cache-control', 'no-store')
+      .send(readFileSync(resolved.value));
+  });
+
+  // Shows the file in Finder (macOS) or opens it with the default app.
+  service.post(
+    '/api/projects/:projectId/files/reveal',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      const body = z
+        .strictObject({
+          path: z.string().min(1).max(1_000),
+          mode: z.enum(['reveal', 'open']).default('reveal'),
+        })
+        .safeParse(request.body);
+      if (!params.success || !body.success) {
+        return reply.code(400).send(invalid('reveal request'));
+      }
+      const resolved = handle(() =>
+        projects.resolveProjectFile(params.data.projectId, body.data.path),
+      );
+      if (!resolved.ok) return reply.code(resolved.status).send(resolved.body);
+      if (process.platform !== 'darwin') {
+        return reply.code(501).send(
+          CommandErrorSchema.parse({
+            error: 'Reveal is only available on macOS in this build.',
+            code: 'invalid_command',
+          }),
+        );
+      }
+      const args =
+        body.data.mode === 'reveal' ? ['-R', resolved.value] : [resolved.value];
+      await new Promise<void>((resolve, reject) => {
+        execFile('/usr/bin/open', args, (error) =>
+          error ? reject(error) : resolve(),
+        );
+      });
+      return { ok: true };
+    },
+  );
 
   service.get('/api/folders', async (request, reply) => {
     const query = z

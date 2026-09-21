@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ProjectFile, ProjectResponse } from '@harness/contracts';
-import { readProjectFile } from './api';
+import { projectFileUrl, readProjectFile, revealProjectFile } from './api';
 import { Markdown } from './markdown';
 import { artifactPaths } from './project-notes';
 
@@ -19,6 +19,16 @@ export function ArtifactsView({
 }) {
   const paths = artifactPaths(project);
   const projectId = project.projection.projectId;
+  const [actionNote, setActionNote] = useState<string>();
+  const act = async (mode: 'reveal' | 'open') => {
+    if (!selected) return;
+    try {
+      await revealProjectFile(projectId, selected, mode);
+      setActionNote(mode === 'reveal' ? 'Shown in Finder.' : 'Opened.');
+    } catch (cause) {
+      setActionNote(cause instanceof Error ? cause.message : 'Could not open.');
+    }
+  };
   const lastSequence = project.projection.lastSequence;
   const busy = project.busyThreadIds.length > 0;
   const [file, setFile] = useState<ProjectFile>();
@@ -51,11 +61,12 @@ export function ArtifactsView({
     };
   }, [projectId, selected, lastSequence, tick]);
 
-  if (!paths.length) {
+  if (!paths.length && !selected) {
     return (
       <p className="detail-lead">
         Nothing written yet. Files agents create or change appear here, and a{' '}
-        <strong>Write</strong> row in a conversation opens them.
+        <strong>Write</strong> or <strong>Read</strong> row in a conversation
+        opens them.
       </p>
     );
   }
@@ -78,7 +89,18 @@ export function ArtifactsView({
       {selected ? (
         <section className="artifact" aria-label={selected}>
           <header className="artifact-head">
-            <code>{selected}</code>
+            <nav className="artifact-crumbs" aria-label="Path">
+              {selected.split('/').map((part, index, parts) => (
+                <span key={`${index}-${part}`}>
+                  {index > 0 ? <span className="crumb-sep">/</span> : null}
+                  <span
+                    className={index === parts.length - 1 ? 'crumb-leaf' : ''}
+                  >
+                    {part}
+                  </span>
+                </span>
+              ))}
+            </nav>
             {file && file.path === selected ? (
               <span className="doc-meta">
                 {formatSize(file.size)}
@@ -86,19 +108,55 @@ export function ArtifactsView({
                 {busy ? ' · live' : ''}
               </span>
             ) : null}
+            <span className="artifact-actions">
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => void act('reveal')}
+                title="Show in Finder"
+              >
+                Finder
+              </button>
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => void act('open')}
+                title="Open with the default app"
+              >
+                Open
+              </button>
+            </span>
           </header>
+          {actionNote ? <p className="doc-hint">{actionNote}</p> : null}
           {error ? <p className="field-value muted">{error}</p> : null}
-          {file && file.path === selected ? <ArtifactBody file={file} /> : null}
+          {file && file.path === selected ? (
+            <ArtifactBody file={file} projectId={projectId} />
+          ) : null}
         </section>
       ) : null}
     </div>
   );
 }
 
-function ArtifactBody({ file }: { file: ProjectFile }) {
+function ArtifactBody({
+  file,
+  projectId,
+}: {
+  file: ProjectFile;
+  projectId: string;
+}) {
   const [raw, setRaw] = useState(false);
   if (file.kind === 'binary') {
     return <p className="field-value muted">Binary file; nothing to show.</p>;
+  }
+  if (file.kind === 'image') {
+    return (
+      <img
+        className="artifact-image"
+        src={`${projectFileUrl(projectId, file.path)}&v=${encodeURIComponent(file.modifiedAt)}`}
+        alt={file.path}
+      />
+    );
   }
   const toggle =
     file.kind === 'markdown' || file.kind === 'html' ? (

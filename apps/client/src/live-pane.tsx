@@ -380,7 +380,18 @@ function ToolRowView({
             ⏺
           </span>
           <span className="tool-name">{row.activity.tool}</span>
-          <span className="tool-target">{row.activity.target}</span>
+          {row.activity.tool === 'Read' && onOpenArtifact ? (
+            <button
+              type="button"
+              className="tool-target tool-link"
+              title="Open in Artifacts"
+              onClick={() => onOpenArtifact(row.activity.target)}
+            >
+              {row.activity.target}
+            </button>
+          ) : (
+            <span className="tool-target">{row.activity.target}</span>
+          )}
           {row.activity.summary ? (
             <span className="tool-note">{row.activity.summary}</span>
           ) : null}

@@ -263,7 +263,7 @@ export const RuntimeUpdateSchema = z.strictObject({
 // One file from the attached folder, for the artifacts viewer.
 export const ProjectFileSchema = z.strictObject({
   path: z.string().min(1),
-  kind: z.enum(['markdown', 'html', 'code', 'text', 'binary']),
+  kind: z.enum(['markdown', 'html', 'code', 'text', 'image', 'binary']),
   content: z.string(),
   size: z.number().int().nonnegative(),
   truncated: z.boolean(),

@@ -402,6 +402,26 @@ export class ProjectService {
 
   // --- Reads ---------------------------------------------------------------
 
+  // The absolute path of a file inside the attached folder, or an error.
+  resolveProjectFile(projectId: ProjectId, path: string): string {
+    const projection = this.requireProjection(projectId);
+    const repository = projection.project.repository;
+    if (!repository) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'This project has no folder attached.',
+      );
+    }
+    try {
+      return insideFolder(repository.path, path);
+    } catch {
+      throw new ProjectCommandError(
+        'folder_not_allowed',
+        `${path} is outside the attached folder.`,
+      );
+    }
+  }
+
   // A file from the attached folder, for viewing what agents wrote.
   readProjectFile(projectId: ProjectId, path: string): ProjectFile {
     const projection = this.requireProjection(projectId);
@@ -432,11 +452,15 @@ export class ProjectService {
     }
     const limit = 512 * 1024;
     const buffer = readFileSync(resolved);
-    const binary = buffer.subarray(0, 8_000).includes(0);
-    const text = binary ? '' : buffer.subarray(0, limit).toString('utf8');
+    const kind = fileKind(path);
+    const binary = kind !== 'image' && buffer.subarray(0, 8_000).includes(0);
+    const text =
+      binary || kind === 'image'
+        ? ''
+        : buffer.subarray(0, limit).toString('utf8');
     return {
       path,
-      kind: binary ? 'binary' : fileKind(path),
+      kind: binary ? 'binary' : kind,
       content: text,
       size: stats.size,
       truncated: !binary && buffer.length > limit,
@@ -2888,8 +2912,20 @@ export class ProjectService {
   }
 }
 
+export const IMAGE_EXTENSIONS: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+};
+
 function fileKind(path: string): ProjectFile['kind'] {
   const extension = extname(path).toLowerCase();
+  if (IMAGE_EXTENSIONS[extension]) return 'image';
   if (['.md', '.markdown', '.mdx'].includes(extension)) return 'markdown';
   if (['.html', '.htm'].includes(extension)) return 'html';
   if (

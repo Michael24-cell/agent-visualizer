@@ -5913,3 +5913,36 @@ button:disabled {
     display: none;
   }
 }
+
+/* Artifact header: path crumbs and actions. */
+.artifact-crumbs {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.crumb-sep {
+  margin: 0 3px;
+}
+.crumb-leaf {
+  color: var(--text);
+}
+.artifact-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+.artifact-image {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: repeating-conic-gradient(
+      rgba(255, 255, 255, 0.05) 0 25%,
+      transparent 0 50%
+    )
+    0 0 / 16px 16px;
+}
