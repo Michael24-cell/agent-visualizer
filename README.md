@@ -37,6 +37,10 @@ The product surface is a set of **conversations on one persisted project stream*
 
 The Increment 2 demo run (`/api/workspace`, `/api/demo-runs`, the "Plan demo" menu in the client) is a **compatibility path** kept for its regression tests; new work does not use the run stream. Real repository scanning and a live provider remain the next seam; no live provider is connected.
 
+### Configuration file
+
+Copy `.env.example` to `.env.local` (git-ignored) and fill in what you use; `npm run dev`, `npm start`, and `npm run smoke:local` read it. Variables already exported in the shell take precedence. Never commit keys.
+
 ### Live agents (Claude Agent SDK)
 
 Agents run on Claude when `ANTHROPIC_API_KEY` is set in the shell that starts the service (`HARNESS_RUNTIME=simulated` forces the simulator; `HARNESS_RUNTIME=live` forces live). The key is read only for its presence; the SDK subprocess inherits it. In live mode a task starts a `query()` in the project's attached folder with the agent's chosen model (`…/agents/:id/model`), streams the SDK frames through `@harness/runtime-claude` into the same events the simulator emits (messages, checks from `Bash`, diff outputs from file edits, asks from permission prompts), pauses the run on an Ask until it is decided, and aborts it on Stop. Attaching a folder is required before live work starts; the coordinator stays simulated; plain chat on a live agent thread is not forwarded into a running task yet. Pay-per-token: the SDK bills the key directly.

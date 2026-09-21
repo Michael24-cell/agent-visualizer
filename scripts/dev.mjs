@@ -1,5 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { loadEnvLocal } from './env-local.mjs';
+
+const loaded = loadEnvLocal();
+if (loaded.length) console.log(`.env.local: ${loaded.join(', ')}`);
 
 const sessionToken = randomBytes(32).toString('hex');
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
