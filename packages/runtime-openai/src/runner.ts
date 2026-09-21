@@ -5,6 +5,7 @@ import {
   type LiveTaskSink,
 } from '@harness/runtime-claude';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
+import { recoverToolCalls } from './tool-calls.js';
 import { LOCAL_AGENT_TOOLS, sdkInput, type ToolDefinition } from './tools.js';
 
 // Runs one task on any OpenAI-compatible chat endpoint (Ollama locally,
@@ -17,6 +18,10 @@ export interface OpenAiRuntimeOptions {
   readonly apiKey?: string | undefined;
   readonly model: string;
   readonly maxTurns?: number | undefined;
+  // Bounds one model turn: output tokens and wall time. Small models can
+  // spiral into repetition; without these a turn never ends.
+  readonly maxOutputTokens?: number | undefined;
+  readonly turnTimeoutMs?: number | undefined;
   // Injectable for tests; defaults to global fetch.
   readonly fetch?: typeof fetch | undefined;
   readonly tools?: readonly ToolDefinition[] | undefined;
@@ -48,6 +53,32 @@ interface ChatCompletion {
 }
 
 const SUMMARY_MAX = 600;
+
+const NUDGE =
+  'You have not called a tool yet, so nothing has changed. Do the work now by calling read_file, edit_file, write_file or run_command — one call, no prose. If the task is truly impossible, say why in one sentence.';
+
+// Some models echo an imagined tool result back as prose; that is never
+// something to show or to accept as a summary.
+function stripHallucinatedResponses(content: string): string {
+  return content
+    .replace(/<tool_response>[\s\S]*?(<\/tool_response>|$)/g, ' ')
+    .replace(/\s+\n/g, '\n')
+    .trim();
+}
+
+const NUDGE_CONTINUE =
+  'You described a next step but did not do it. Do it now with a tool call (write_file or run_command). Only reply without a tool call once everything is done and the tests have been run.';
+
+// "Now I'll…", "Next, I will…": the model narrating work it has not done.
+const PROMISES_MORE =
+  /\b(?:now,?\s+)?(?:i'?ll|i will|let'?s|next,? i|i am going to|i'm going to)\b/i;
+
+// Small models need telling; larger ones ignore it harmlessly.
+const TOOL_GUIDANCE =
+  'Use the provided tools to look at and change the project; do not guess file contents. ' +
+  'Call one tool at a time and wait for its result before the next. ' +
+  'To change a file: read it, then write_file its complete new contents (every line, not a fragment). Run the tests after changing code. ' +
+  'When the work is done, reply with a short plain-text summary and no tool call.';
 const TITLE_MAX = 80;
 
 function clip(text: string, max: number): string {
@@ -73,11 +104,14 @@ async function complete(
   signal: AbortSignal,
 ): Promise<ChatCompletion['choices'][number]['message']> {
   const doFetch = options.fetch ?? fetch;
+  const timeoutMs = options.turnTimeoutMs ?? 180_000;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const combined = AbortSignal.any([signal, timeout]);
   const response = await doFetch(
     `${options.baseUrl.replace(/\/$/, '')}/chat/completions`,
     {
       method: 'POST',
-      signal,
+      signal: combined,
       headers: {
         'content-type': 'application/json',
         ...(options.apiKey
@@ -96,10 +130,18 @@ async function complete(
           },
         })),
         temperature: 0.2,
+        max_tokens: options.maxOutputTokens ?? 2_048,
         stream: false,
       }),
     },
-  );
+  ).catch((error: unknown) => {
+    if (timeout.aborted) {
+      throw new Error(
+        `${options.model} gave no answer within ${Math.round(timeoutMs / 1000)}s.`,
+      );
+    }
+    throw error;
+  });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(
@@ -133,9 +175,16 @@ export function runOpenAiTask(
     return true;
   };
 
+  // Guardrails for small models: edits need a prior read of that file,
+  // and a finish after changes without any command run is labelled so.
+  const readPaths = new Set<string>();
+  let changedFiles = 0;
+  let commandsRun = 0;
+  let nudges = 0;
+
   const done = (async () => {
     const messages: ChatMessage[] = [
-      { role: 'system', content: input.systemPrompt },
+      { role: 'system', content: `${input.systemPrompt}\n\n${TOOL_GUIDANCE}` },
       { role: 'user', content: input.prompt },
     ];
     try {
@@ -147,17 +196,45 @@ export function runOpenAiTask(
           tools,
           abortController.signal,
         );
-        const text = (reply.content ?? '').trim();
-        const calls = reply.tool_calls ?? [];
+        let text = stripHallucinatedResponses(reply.content ?? '');
+        let calls: readonly ToolCall[] = reply.tool_calls ?? [];
+        if (calls.length === 0 && text) {
+          const recovered = recoverToolCalls(
+            text,
+            tools.map((tool) => tool.name),
+          );
+          if (recovered.calls.length) {
+            calls = recovered.calls;
+            text = recovered.prose;
+          }
+        }
         messages.push({
           role: 'assistant',
-          content: reply.content ?? null,
+          content: text || null,
           ...(calls.length ? { tool_calls: calls } : {}),
         });
         if (text && !emit([{ kind: 'say', body: text }])) return;
+        if (calls.length === 0 && nudges < 2) {
+          const nothingHappened = changedFiles === 0 && commandsRun === 0;
+          const promisedMore = PROMISES_MORE.test(text);
+          if (nothingHappened || promisedMore) {
+            // The model drifted into prose (nothing changed and nothing
+            // ran) or announced its next step and stopped. Ask it to act.
+            nudges += 1;
+            messages.push({
+              role: 'user',
+              content: nothingHappened ? NUDGE : NUDGE_CONTINUE,
+            });
+            continue;
+          }
+        }
         if (calls.length === 0) {
+          const unverified = changedFiles > 0 && commandsRun === 0;
           emit([
-            { kind: 'finish', reason: clip(text, SUMMARY_MAX) || 'Finished.' },
+            {
+              kind: 'finish',
+              reason: `${unverified ? 'Unverified — no command was run. ' : ''}${clip(text, SUMMARY_MAX) || 'Finished.'}`,
+            },
           ]);
           return;
         }
@@ -171,6 +248,15 @@ export function runOpenAiTask(
           if (!tool) {
             result = {
               text: `Unknown tool ${call.function.name}.`,
+              isError: true,
+            };
+          } else if (
+            tool.sdkName === 'Edit' &&
+            typeof args.path === 'string' &&
+            !readPaths.has(args.path)
+          ) {
+            result = {
+              text: `Read ${args.path} with read_file before editing it, so old_text matches the real contents.`,
               isError: true,
             };
           } else if (
@@ -188,6 +274,16 @@ export function runOpenAiTask(
                 cwd: input.cwd,
                 signal: abortController.signal,
               });
+              if (tool.sdkName === 'Read' && typeof args.path === 'string') {
+                readPaths.add(args.path);
+              }
+              if (tool.sdkName === 'Bash') commandsRun += 1;
+              if (
+                (tool.sdkName === 'Edit' || tool.sdkName === 'Write') &&
+                !result.isError
+              ) {
+                changedFiles += 1;
+              }
             } catch (error) {
               result = {
                 text: error instanceof Error ? error.message : String(error),

@@ -288,7 +288,18 @@ export const writeTool: ToolDefinition = {
   },
 };
 
+// The default set leaves out edit_file: small models treat search/replace
+// as "insert after this marker" and corrupt files, while whole-file
+// writes are reliable. Larger models get the full set.
 export const LOCAL_AGENT_TOOLS: readonly ToolDefinition[] = [
+  readTool,
+  globTool,
+  grepTool,
+  bashTool,
+  writeTool,
+];
+
+export const LOCAL_AGENT_TOOLS_FULL: readonly ToolDefinition[] = [
   readTool,
   globTool,
   grepTool,

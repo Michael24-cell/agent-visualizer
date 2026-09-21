@@ -31,6 +31,8 @@ const EnvironmentSchema = z.object({
   HARNESS_LOCAL_BASE_URL: z.string().url().default('http://127.0.0.1:11434/v1'),
   HARNESS_LOCAL_API_KEY: z.string().min(1).optional(),
   HARNESS_LOCAL_MODEL: z.string().min(1).default('qwen2.5-coder:7b'),
+  // 'full' adds edit_file (search/replace) for models that can use it.
+  HARNESS_LOCAL_TOOLS: z.enum(['basic', 'full']).default('basic'),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -56,6 +58,7 @@ export type RuntimeConfig =
       readonly baseUrl: string;
       readonly apiKey?: string | undefined;
       readonly model: string;
+      readonly tools: 'basic' | 'full';
     };
 
 function defaultDataDirectory(
@@ -129,6 +132,7 @@ function runtimeFrom(
         baseUrl: environment.HARNESS_LOCAL_BASE_URL,
         apiKey: environment.HARNESS_LOCAL_API_KEY,
         model: environment.HARNESS_LOCAL_MODEL,
+        tools: environment.HARNESS_LOCAL_TOOLS,
       };
     default:
       return environment.ANTHROPIC_API_KEY

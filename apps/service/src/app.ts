@@ -42,7 +42,11 @@ import {
   snapshotFor,
   workspaceFixture,
 } from './demo-run.js';
-import { runOpenAiTask } from '@harness/runtime-openai';
+import {
+  LOCAL_AGENT_TOOLS,
+  LOCAL_AGENT_TOOLS_FULL,
+  runOpenAiTask,
+} from '@harness/runtime-openai';
 import { registerProjectRoutes } from './project-routes.js';
 import { ProjectService, type TaskRunner } from './projects.js';
 
@@ -74,6 +78,10 @@ function runtimeOptions(config: AppConfig): {
             baseUrl: runtime.baseUrl,
             apiKey: runtime.apiKey,
             model: runtime.model,
+            tools:
+              runtime.tools === 'full'
+                ? LOCAL_AGENT_TOOLS_FULL
+                : LOCAL_AGENT_TOOLS,
           }),
       };
     default:

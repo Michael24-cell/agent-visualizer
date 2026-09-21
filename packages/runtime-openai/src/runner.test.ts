@@ -12,6 +12,7 @@ import type { LiveTaskSink } from '@harness/runtime-claude';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOpenAiTask } from './runner.js';
+import { LOCAL_AGENT_TOOLS_FULL } from './tools.js';
 import { insideFolder } from './tools.js';
 
 const folders: string[] = [];
@@ -123,6 +124,7 @@ describe('runOpenAiTask', () => {
       baseUrl: 'http://fake/v1',
       model: 'test-model',
       fetch: fetchFn,
+      tools: LOCAL_AGENT_TOOLS_FULL,
     }).done;
 
     expect(seen.asks).toEqual(['Run Bash echo ok', 'Run Edit src/app.ts']);
@@ -161,10 +163,8 @@ describe('runOpenAiTask', () => {
       'edit_file',
     ]);
     expect(toolMessages[0]!.content).toContain('greeting');
-    expect(requests[0]!.messages[0]).toMatchObject({
-      role: 'system',
-      content: 'You are an agent.',
-    });
+    expect(requests[0]!.messages[0]!.role).toBe('system');
+    expect(requests[0]!.messages[0]!.content).toMatch(/^You are an agent\./);
   });
 
   it('records a failed command as a failed check and keeps going', async () => {
@@ -267,6 +267,92 @@ describe('runOpenAiTask', () => {
   });
 });
 
+describe('guardrails for small models', () => {
+  it('refuses an edit before a read and labels an unverified finish', async () => {
+    const cwd = project();
+    const { fetchFn, requests } = server([
+      {
+        tool_calls: [
+          {
+            name: 'edit_file',
+            args: { path: 'src/app.ts', old_text: '"hi"', new_text: '"x"' },
+          },
+        ],
+      },
+      {
+        tool_calls: [
+          { name: 'write_file', args: { path: 'notes.txt', content: 'n' } },
+        ],
+      },
+      { content: 'Done.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+      tools: LOCAL_AGENT_TOOLS_FULL,
+    }).done;
+    const firstTool = requests[1]!.messages.find((m) => m.role === 'tool')!;
+    expect(firstTool.content).toMatch(/read_file before editing/);
+    expect(readFileSync(join(cwd, 'src', 'app.ts'), 'utf8')).toContain('"hi"');
+    expect(seen.batches.at(-1)).toEqual([
+      { kind: 'finish', reason: 'Unverified — no command was run. Done.' },
+    ]);
+  });
+});
+
+describe('nudging', () => {
+  it('pushes a model that stops calling tools before anything happened, at most twice', async () => {
+    const cwd = project();
+    const { fetchFn, requests } = server([
+      { content: 'Here is what I would do: edit the file.' },
+      { content: 'Please run the following command.' },
+      { content: 'I cannot.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    expect(requests).toHaveLength(3);
+    expect(requests[1]!.messages.at(-1)).toMatchObject({ role: 'user' });
+    expect(requests[1]!.messages.at(-1)!.content).toMatch(/not called a tool/);
+    expect(seen.batches.at(-1)).toEqual([
+      { kind: 'finish', reason: 'I cannot.' },
+    ]);
+  });
+});
+
+describe('promised work', () => {
+  it('nudges a model that announces a next step and stops', async () => {
+    const cwd = project();
+    const { fetchFn, requests } = server([
+      {
+        tool_calls: [
+          { name: 'write_file', args: { path: 'a.txt', content: 'a' } },
+        ],
+      },
+      { content: "Wrote a.txt. Now I'll run the tests." },
+      {
+        tool_calls: [{ name: 'run_command', args: { command: 'echo tested' } }],
+      },
+      { content: 'Done and tested.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    expect(requests[2]!.messages.at(-1)!.content).toMatch(/did not do it/);
+    expect(seen.batches.at(-1)).toEqual([
+      { kind: 'finish', reason: 'Done and tested.' },
+    ]);
+  });
+});
+
 describe('insideFolder', () => {
   it('keeps paths inside the folder, including through symlinks', () => {
     const cwd = project();
@@ -277,5 +363,50 @@ describe('insideFolder', () => {
     expect(() => insideFolder(cwd, '/etc/passwd')).toThrow(/outside/);
     symlinkSync(tmpdir(), join(cwd, 'escape'));
     expect(() => insideFolder(cwd, 'escape/anything')).toThrow(/outside/);
+  });
+});
+
+describe('hallucinated tool responses', () => {
+  it('are stripped from what the model says', async () => {
+    const cwd = project();
+    const { fetchFn } = server([
+      { tool_calls: [{ name: 'run_command', args: { command: 'echo hi' } }] },
+      { content: '<tool_response>\nhi\n</tool_response>\nAll good.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    expect(seen.batches.at(-2)).toEqual([{ kind: 'say', body: 'All good.' }]);
+    expect(seen.batches.at(-1)).toEqual([
+      { kind: 'finish', reason: 'All good.' },
+    ]);
+  });
+});
+
+describe('turn bounds', () => {
+  it('sends max_tokens and fails a turn that exceeds the timeout with a clear reason', async () => {
+    const cwd = project();
+    let body: { max_tokens?: number } = {};
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'slow',
+      turnTimeoutMs: 30,
+      fetch: (_url, init) => {
+        body = JSON.parse(String(init?.body)) as typeof body;
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        });
+      },
+    }).done;
+    expect(body.max_tokens).toBe(2_048);
+    expect(seen.batches).toEqual([
+      [{ kind: 'fail', reason: 'slow gave no answer within 0s.' }],
+    ]);
   });
 });
