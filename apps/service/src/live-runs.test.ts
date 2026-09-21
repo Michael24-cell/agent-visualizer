@@ -518,4 +518,51 @@ describe('live runs', () => {
     });
     expect(Object.values(project.projection.tasks)[0]!.state).toBe('done');
   });
+
+  it('offers the Method only when applied; agent edits become overrides without touching pinned snapshots', async () => {
+    const offered: boolean[] = [];
+    let reply = '';
+    const frames: FrameSource = async function* (input) {
+      offered.push(Boolean(input.documents?.readMethod));
+      if (input.documents?.updateMethodSection) {
+        const before = input.documents.readMethod!();
+        expect(before.title).toBe('Evidence-led delivery');
+        reply = await input.documents.updateMethodSection('checks', [
+          'npm test',
+        ]);
+      }
+      yield success('ok');
+    };
+    const { root, service } = setup(frames);
+    const ids = createProject(service, root);
+    // No Method: not offered.
+    startWork(service, ids, 'First');
+    await service.whenIdle();
+    let project = service.getProject(ids.projectId as never);
+    service.applyMethod(ids.projectId as never, {
+      commandId: commandId(),
+      expectedSequence: project.projection.lastSequence,
+      catalogId: 'method_evidence-led-delivery' as never,
+      catalogVersion: '1.2.0',
+    });
+    startWork(service, ids, 'Second');
+    await service.whenIdle();
+    project = service.getProject(ids.projectId as never);
+    expect(offered).toEqual([false, true]);
+    expect(reply).toMatch(/Method · Checks now has 1 line/);
+    const method = project.projection.method!;
+    expect(method.overrides.at(-1)).toMatchObject({
+      sectionId: 'checks',
+      value: ['npm test'],
+      source: 'agent',
+    });
+    // The second task's snapshot was pinned before the edit and keeps it.
+    const second = Object.values(project.projection.tasks).find(
+      (task) => task.title === 'Second',
+    )!;
+    const snapshot =
+      project.projection.methodSnapshots[second.methodSnapshotId!]!;
+    expect(snapshot.resolved.checks).not.toContain('npm test');
+    expect(second.state).toBe('done');
+  });
 });

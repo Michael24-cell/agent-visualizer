@@ -487,3 +487,92 @@ describe('plan tools', () => {
     ]);
   });
 });
+
+describe('method tools', () => {
+  it('appear only when a Method is applied, and record agent overrides', async () => {
+    const cwd = project();
+    const edits: [string, string[]][] = [];
+    const documents = {
+      readPlan: () => ({ sections: [] }),
+      updatePlanSection: async () => 'n/a',
+      readMethod: () => ({
+        title: 'Evidence-led delivery',
+        sections: [
+          {
+            id: 'hardRules',
+            title: 'Hard rules',
+            lines: ['No network calls.'],
+          },
+          { id: 'checks', title: 'Checks', lines: [] },
+        ],
+      }),
+      updateMethodSection: async (sectionId: string, lines: string[]) => {
+        edits.push([sectionId, lines]);
+        return `Method · ${sectionId} now has ${lines.length} lines.`;
+      },
+    };
+    const { fetchFn, requests } = server([
+      { tool_calls: [{ name: 'read_method', args: {} }] },
+      {
+        tool_calls: [
+          {
+            name: 'update_method_section',
+            args: { section: 'checks', lines: ['- npm test'] },
+          },
+        ],
+      },
+      { content: 'Method updated.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask({ ...input(cwd), documents }, seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    const firstResult = requests[1]!.messages.find((m) => m.role === 'tool')!;
+    expect(firstResult.content).toContain('# Evidence-led delivery');
+    expect(firstResult.content).toContain('## Hard rules (hardRules)');
+    expect(edits).toEqual([['checks', ['npm test']]]);
+    expect(seen.batches).toEqual([
+      [{ kind: 'activity', tool: 'Method', target: 'Method', summary: 'read' }],
+      [
+        {
+          kind: 'activity',
+          tool: 'Method',
+          target: 'Method · checks',
+          summary: 'updated',
+        },
+      ],
+      [{ kind: 'finish', reason: 'Method updated.' }],
+    ]);
+
+    // Without a Method the tools are not offered at all.
+    let toolNames: string[] = [];
+    const fakeFetch: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        tools: { function: { name: string } }[];
+      };
+      toolNames = body.tools.map((t) => t.function.name);
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    await runOpenAiTask(
+      {
+        ...input(cwd),
+        documents: {
+          readPlan: documents.readPlan,
+          updatePlanSection: documents.updatePlanSection,
+        },
+      },
+      collect().sink,
+      { baseUrl: 'http://fake/v1', model: 'm', fetch: fakeFetch, maxTurns: 1 },
+    ).done;
+    expect(toolNames).toContain('read_plan');
+    expect(toolNames).not.toContain('read_method');
+  });
+});

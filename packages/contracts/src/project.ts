@@ -158,6 +158,18 @@ export const MethodSectionIdSchema = z.enum([
   'scopeRestrictions',
 ]);
 
+export const METHOD_SECTION_TITLES: Readonly<
+  Record<z.infer<typeof MethodSectionIdSchema>, string>
+> = {
+  hardRules: 'Hard rules',
+  preferences: 'Preferences',
+  promptGuidance: 'Guidance',
+  skills: 'Skills',
+  outputExpectations: 'Output expectations',
+  checks: 'Checks',
+  scopeRestrictions: 'Scope restrictions',
+};
+
 export const MethodDefinitionSchema = z.strictObject({
   id: MethodIdSchema,
   version: z.string().min(1),
@@ -406,6 +418,7 @@ export const ActivityToolSchema = z.enum([
   'Grep',
   'Glob',
   'Plan',
+  'Method',
   'Other',
 ]);
 

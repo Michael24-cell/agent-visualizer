@@ -22,7 +22,7 @@ export interface ToolDefinition {
   readonly name: string;
   // The SDK-style name used for asks, checks and outputs.
   readonly sdkName:
-    'Read' | 'Glob' | 'Grep' | 'Bash' | 'Edit' | 'Write' | 'Plan';
+    'Read' | 'Glob' | 'Grep' | 'Bash' | 'Edit' | 'Write' | 'Plan' | 'Method';
   readonly description: string;
   readonly parameters: Record<string, unknown>;
   readonly needsPermission: boolean;
@@ -327,14 +327,48 @@ export function sdkInput(
   }
 }
 
-// Harness-side tools over the project's Plan document. Not gated by a
-// permission: the change is visible at once and easy to undo by editing.
-export function planTools(documents: {
-  readPlan(): { sections: { id: string; title: string; lines: string[] }[] };
+// Harness-side tools over the project's documents (Plan, and Method when
+// one is applied). Not gated by a permission: the change is visible at
+// once and easy to undo by editing.
+interface Sections {
+  readonly sections: { id: string; title: string; lines: string[] }[];
+}
+
+function renderSections(document: Sections): string {
+  return document.sections
+    .map(
+      (section) =>
+        `## ${section.title} (${section.id})\n${
+          section.lines.length
+            ? section.lines.map((line) => `- ${line}`).join('\n')
+            : '(empty)'
+        }`,
+    )
+    .join('\n\n');
+}
+
+function cleanLines(input: unknown): string[] {
+  // One point per line; models often add their own bullet markers.
+  return Array.isArray(input)
+    ? input
+        .map((line) =>
+          String(line)
+            .trim()
+            .replace(/^(?:[-*•]|\d+[.)])\s+/, ''),
+        )
+        .filter(Boolean)
+    : [];
+}
+
+export function documentTools(documents: {
+  readPlan(): Sections;
   updatePlanSection(sectionId: string, lines: string[]): Promise<string>;
+  readMethod?: (() => Sections & { title: string }) | undefined;
+  updateMethodSection?:
+    ((sectionId: string, lines: string[]) => Promise<string>) | undefined;
 }): ToolDefinition[] {
-  const sectionIds = () => documents.readPlan().sections.map((s) => s.id);
-  return [
+  const planIds = () => documents.readPlan().sections.map((s) => s.id);
+  const tools: ToolDefinition[] = [
     {
       name: 'read_plan',
       sdkName: 'Plan',
@@ -343,18 +377,7 @@ export function planTools(documents: {
       parameters: { type: 'object', properties: {} },
       needsPermission: false,
       async run() {
-        const { sections } = documents.readPlan();
-        const text = sections
-          .map(
-            (section) =>
-              `## ${section.title} (${section.id})\n${
-                section.lines.length
-                  ? section.lines.map((line) => `- ${line}`).join('\n')
-                  : '(empty)'
-              }`,
-          )
-          .join('\n\n');
-        return { text };
+        return { text: renderSections(documents.readPlan()) };
       },
     },
     {
@@ -376,24 +399,72 @@ export function planTools(documents: {
       needsPermission: false,
       async run(input) {
         const section = str(input, 'section').toLowerCase();
-        if (!sectionIds().includes(section)) {
+        if (!planIds().includes(section)) {
           return {
-            text: `Unknown section "${section}". Use one of: ${sectionIds().join(', ')}.`,
+            text: `Unknown section "${section}". Use one of: ${planIds().join(', ')}.`,
             isError: true,
           };
         }
-        // One point per line; models often add their own bullet markers.
-        const lines = Array.isArray(input.lines)
-          ? input.lines
-              .map((line) =>
-                String(line)
-                  .trim()
-                  .replace(/^(?:[-*•]|\d+[.)])\s+/, ''),
-              )
-              .filter(Boolean)
-          : [];
-        return { text: await documents.updatePlanSection(section, lines) };
+        return {
+          text: await documents.updatePlanSection(
+            section,
+            cleanLines(input.lines),
+          ),
+        };
       },
     },
   ];
+  const readMethod = documents.readMethod;
+  const updateMethodSection = documents.updateMethodSection;
+  if (readMethod && updateMethodSection) {
+    const methodIds = () => readMethod().sections.map((s) => s.id);
+    tools.push(
+      {
+        name: 'read_method',
+        sdkName: 'Method',
+        description:
+          'Read the project Method: the rules, preferences, guidance, skills, output expectations, checks and scope restrictions every agent follows.',
+        parameters: { type: 'object', properties: {} },
+        needsPermission: false,
+        async run() {
+          const method = readMethod();
+          return { text: `# ${method.title}\n\n${renderSections(method)}` };
+        },
+      },
+      {
+        name: 'update_method_section',
+        sdkName: 'Method',
+        description:
+          'Replace one section of the project Method with new lines. Sections: hardRules, preferences, promptGuidance, skills, outputExpectations, checks, scopeRestrictions. Use read_method first.',
+        parameters: {
+          type: 'object',
+          properties: {
+            section: { type: 'string' },
+            lines: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['section', 'lines'],
+        },
+        needsPermission: false,
+        async run(input) {
+          const raw = str(input, 'section');
+          const section = methodIds().find(
+            (id) => id.toLowerCase() === raw.toLowerCase(),
+          );
+          if (!section) {
+            return {
+              text: `Unknown section "${raw}". Use one of: ${methodIds().join(', ')}.`,
+              isError: true,
+            };
+          }
+          return {
+            text: await updateMethodSection(section, cleanLines(input.lines)),
+          };
+        },
+      },
+    );
+  }
+  return tools;
 }
+
+// Kept for callers that only offer the Plan.
+export const planTools = documentTools;

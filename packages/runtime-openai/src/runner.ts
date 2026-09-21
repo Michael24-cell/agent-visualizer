@@ -8,7 +8,7 @@ import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { recoverToolCalls } from './tool-calls.js';
 import {
   LOCAL_AGENT_TOOLS,
-  planTools,
+  documentTools,
   sdkInput,
   type ToolDefinition,
 } from './tools.js';
@@ -168,7 +168,7 @@ export function runOpenAiTask(
   const abortController = new AbortController();
   const tools = [
     ...(options.tools ?? LOCAL_AGENT_TOOLS),
-    ...(input.documents ? planTools(input.documents) : []),
+    ...(input.documents ? documentTools(input.documents) : []),
   ];
   const maxTurns = options.maxTurns ?? 30;
   let stopped = false;
@@ -292,8 +292,8 @@ export function runOpenAiTask(
               }
               if (tool.sdkName === 'Bash') commandsRun += 1;
               if (
-                tool.sdkName === 'Plan' &&
-                tool.name === 'update_plan_section' &&
+                (tool.name === 'update_plan_section' ||
+                  tool.name === 'update_method_section') &&
                 !result.isError
               ) {
                 planEdits += 1;
@@ -398,18 +398,18 @@ function intentsFor(
         },
       ];
     }
-    case 'Plan': {
+    case 'Plan':
+    case 'Method': {
       if (result.isError) return [];
       const section =
-        typeof args.section === 'string'
-          ? args.section.toLowerCase()
-          : undefined;
+        typeof args.section === 'string' ? args.section : undefined;
+      const label = tool.sdkName === 'Plan' ? section?.toLowerCase() : section;
       return [
         {
           kind: 'activity',
-          tool: 'Plan',
-          target: section ? `Plan · ${section}` : 'Plan',
-          summary: section ? 'updated' : 'read',
+          tool: tool.sdkName,
+          target: label ? `${tool.sdkName} · ${label}` : tool.sdkName,
+          summary: label ? 'updated' : 'read',
         },
       ];
     }

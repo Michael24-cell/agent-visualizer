@@ -14,6 +14,8 @@ import {
   ProjectIdSchema,
   ProposalIdSchema,
   TaskIdSchema,
+  METHOD_SECTION_TITLES,
+  MethodSectionIdSchema,
   PLAN_SECTIONS,
   PlanSectionIdSchema,
   ThreadIdSchema,
@@ -675,6 +677,53 @@ export class ProjectService {
         }
         return `Plan · ${PLAN_SECTIONS[parsed.data].title} now has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}.`;
       },
+      // The Method, when one is applied. Agent edits are overrides like
+      // the user's; tasks already running keep their pinned snapshot.
+      ...(projection.method
+        ? {
+            readMethod: () => {
+              const method = this.requireProjection(projectId).method;
+              const resolved = method
+                ? resolveMethod(method)
+                : projection.method!.definition;
+              return {
+                title: resolved.title,
+                sections: MethodSectionIdSchema.options.map((id) => ({
+                  id,
+                  title: METHOD_SECTION_TITLES[id],
+                  lines: [...resolved[id]],
+                })),
+              };
+            },
+            updateMethodSection: async (sectionId: string, lines: string[]) => {
+              const parsed = MethodSectionIdSchema.safeParse(sectionId);
+              if (!parsed.success) return `Unknown section ${sectionId}.`;
+              const current = this.requireProjection(projectId);
+              if (current.tasks[task.id]?.state !== 'working') {
+                return 'The task is no longer running; the Method was not changed.';
+              }
+              if (!current.method) return 'No Method is applied any more.';
+              const batch = new ProjectBatch(
+                this.store,
+                projectId,
+                randomUUID(),
+                this.now(),
+                current,
+              );
+              try {
+                batch.emit(
+                  'method.override_recorded',
+                  { sectionId: parsed.data, value: lines, source: 'agent' },
+                  { source: 'agent', adapter: CLAUDE_AGENT_ADAPTER },
+                );
+                batch.commit();
+              } catch (error) {
+                return error instanceof Error ? error.message : String(error);
+              }
+              return `Method · ${METHOD_SECTION_TITLES[parsed.data]} now has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}. Tasks already running keep the Method they started with.`;
+            },
+          }
+        : {}),
     };
 
     const run = this.runner(

@@ -27,9 +27,17 @@ export interface LiveTaskInput {
 
 // What an agent may do with the Plan document: read it whole, or replace
 // one section. Edits land as the same event the user's edits do.
+export interface DocumentSections {
+  readonly sections: { id: string; title: string; lines: string[] }[];
+}
+
 export interface ProjectDocuments {
-  readPlan(): { sections: { id: string; title: string; lines: string[] }[] };
+  readPlan(): DocumentSections;
   updatePlanSection(sectionId: string, lines: string[]): Promise<string>;
+  // Absent when no Method is applied to the project.
+  readMethod?: (() => DocumentSections & { title: string }) | undefined;
+  updateMethodSection?:
+    ((sectionId: string, lines: string[]) => Promise<string>) | undefined;
 }
 
 export interface LiveTaskSink {

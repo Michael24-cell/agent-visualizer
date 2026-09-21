@@ -1,4 +1,5 @@
 import {
+  METHOD_SECTION_TITLES,
   PLAN_SECTIONS,
   type MethodSectionId,
   type PlanSectionId,
@@ -73,15 +74,7 @@ const METHOD_ALIASES: Record<string, MethodSectionId> = {
   'method scope': 'scopeRestrictions',
 };
 
-export const METHOD_SECTION_TITLES: Record<MethodSectionId, string> = {
-  hardRules: 'Hard rules',
-  preferences: 'Preferences',
-  promptGuidance: 'Guidance',
-  skills: 'Skills',
-  outputExpectations: 'Output expectations',
-  checks: 'Checks',
-  scopeRestrictions: 'Scope restrictions',
-};
+export { METHOD_SECTION_TITLES };
 
 const SECTION_NAMES = [
   ...Object.keys(PLAN_ALIASES),
