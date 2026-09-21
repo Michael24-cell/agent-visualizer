@@ -420,6 +420,7 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
               example={`${PLAN_SECTIONS[sectionId].title}: …`}
               busy={busy}
               onSave={(lines) => save(sectionId, lines)}
+              footer={<SectionTasks project={project} sectionId={sectionId} />}
             />
           );
         })}
@@ -468,6 +469,20 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
                         ? ` · checks: ${row.requiredChecks.join(', ')}`
                         : ''}
                       {row.modelTier ? ` · ${row.modelTier} model` : ''}
+                      {row.sections?.length ? (
+                        <>
+                          {' · '}
+                          {row.sections.map((id) => (
+                            <a
+                              key={id}
+                              className="section-chip"
+                              href={`#doc-plan-${id}`}
+                            >
+                              {PLAN_SECTIONS[id].title}
+                            </a>
+                          ))}
+                        </>
+                      ) : null}
                       <br />
                       {row.whySeparate} {row.whyThisAgent}
                     </span>
@@ -480,6 +495,37 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
         );
       })}
     </div>
+  );
+}
+
+// Tasks that implement a Plan section, with their state.
+function SectionTasks({
+  project,
+  sectionId,
+}: {
+  project: ProjectResponse;
+  sectionId: (typeof PlanSectionIdSchema.options)[number];
+}) {
+  const tasks = Object.values(project.projection.tasks)
+    .filter((task) => task.sections?.includes(sectionId))
+    .sort((a, b) => a.createdAtSequence - b.createdAtSequence);
+  if (!tasks.length) return null;
+  return (
+    <p className="doc-section-tasks">
+      {tasks.map((task, index) => {
+        const agent = project.projection.agents[task.agentId];
+        return (
+          <span key={task.id} className={`doc-task task-${task.state}`}>
+            {index > 0 ? ' · ' : ''}
+            <span className={`cat-dot work-${task.state}`} aria-hidden="true" />
+            {task.title.length > 48
+              ? `${task.title.slice(0, 47)}…`
+              : task.title}
+            {agent ? ` — ${agent.name}` : ''} · {workLabels[task.state]}
+          </span>
+        );
+      })}
+    </p>
   );
 }
 

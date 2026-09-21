@@ -69,6 +69,9 @@ import {
   SIMULATED_CONVERSATION_ADAPTER,
   applyDocumentEdit,
   classifyCoordinatorMessage,
+  featuresFromRequest,
+  overviewFromRequest,
+  sectionsForText,
   parseDocumentEdit,
   coordinatorGreeting,
   findMethod,
@@ -1325,6 +1328,7 @@ export class ProjectService {
                     ? 'experience-check'
                     : 'contract-check',
                 ],
+                sections: sectionsForText(command.body),
                 state: 'working',
                 ...(messageId ? { originMessageId: messageId } : {}),
                 createdAtSequence: batch.nextSequence(),
@@ -1422,6 +1426,7 @@ export class ProjectService {
           inputsSatisfied: [],
           expectedOutputs: [],
           requiredChecks: [],
+          sections: sectionsForText(command.body),
           state: 'working',
           ...(messageId ? { originMessageId: messageId } : {}),
           createdAtSequence: batch.nextSequence(),
@@ -1431,6 +1436,48 @@ export class ProjectService {
     );
     batch.created('tasks', taskId);
     this.pinMethod(batch, taskId, safe(command.commandId));
+  }
+
+  // A work request leaves its mark on the Plan document before any task
+  // exists: the overview if empty, and its parts as features.
+  private fillPlanFromRequest(
+    batch: ProjectBatch,
+    body: string,
+    messageId: string | undefined,
+  ) {
+    const document = batch.current.planDocument;
+    const meta = {
+      source: 'coordinator' as const,
+      adapter: SIMULATED_CONVERSATION_ADAPTER,
+    };
+    if (!document.sections.overview?.lines.length) {
+      batch.emit(
+        'plan.section_edited',
+        {
+          sectionId: 'overview',
+          lines: [overviewFromRequest(body)],
+          source: 'coordinator',
+          ...(messageId ? { messageId } : {}),
+        },
+        meta,
+      );
+    }
+    const current = batch.current.planDocument.sections.features?.lines ?? [];
+    const fresh = featuresFromRequest(body).filter(
+      (line) => !current.some((c) => c.toLowerCase() === line.toLowerCase()),
+    );
+    if (fresh.length) {
+      batch.emit(
+        'plan.section_edited',
+        {
+          sectionId: 'features',
+          lines: [...current, ...fresh],
+          source: 'coordinator',
+          ...(messageId ? { messageId } : {}),
+        },
+        meta,
+      );
+    }
   }
 
   // A conversational edit to the Plan or Method document, applied at once
@@ -1649,6 +1696,7 @@ export class ProjectService {
       }
       case 'request_work': {
         const live = this.livePlan(projection);
+        this.fillPlanFromRequest(batch, body, messageId);
         if (projection.brief.fields.goal.state === 'missing') {
           batch.emit(
             'brief.field_updated',
@@ -1689,6 +1737,7 @@ export class ProjectService {
       }
       case 'direct_work': {
         const live = this.livePlan(projection);
+        this.fillPlanFromRequest(batch, body, messageId);
         const shape =
           open && live
             ? { tasks: live.tasks, whyThisMany: live.whyThisMany }
@@ -1880,6 +1929,7 @@ export class ProjectService {
             whyThisAgent: row.whyThisAgent,
             skills: row.skills,
             scope: row.scope,
+            ...(row.sections?.length ? { sections: row.sections } : {}),
             scopeHistory: [],
             dependsOn,
             inputsSatisfied: [],

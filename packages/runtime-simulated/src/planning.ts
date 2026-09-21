@@ -170,6 +170,7 @@ export function planFromRequest(
     expectedOutputs: ['Interface contract'],
     requiredChecks: ['contract-check'],
     modelTier: 'standard',
+    sections: ['features', 'ui'],
   };
   const backendTask: PlanTask = {
     title: `Implement and verify the ${subject} service handoff`,
@@ -185,6 +186,7 @@ export function planFromRequest(
     expectedOutputs: ['Authenticated endpoint', 'Diff summary'],
     requiredChecks: ['experience-check'],
     modelTier: 'deep',
+    sections: ['features', 'data'],
   };
   if (options.extraChecks) {
     interfaceTask.requiredChecks = [
@@ -208,6 +210,7 @@ export function planFromRequest(
           ],
           requiredChecks: ['contract-check', 'experience-check'],
           modelTier: 'deep',
+          sections: ['features', 'ui', 'data'],
         },
       ],
       whyThisMany:

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useState, type KeyboardEvent, type ReactNode } from 'react';
 
 // One section of a project document (Plan or Method): a heading, a few
 // lines, and an in-place editor. Edits are one line per row; the same
@@ -13,6 +13,7 @@ export function DocumentSection({
   example,
   busy,
   onSave,
+  footer,
 }: {
   id: string;
   title: string;
@@ -24,6 +25,8 @@ export function DocumentSection({
   example: string;
   busy: boolean;
   onSave: (lines: string[]) => Promise<void>;
+  // Shown under the lines: e.g. which tasks implement this section.
+  footer?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -121,6 +124,7 @@ export function DocumentSection({
           </span>
         </button>
       )}
+      {footer}
     </section>
   );
 }

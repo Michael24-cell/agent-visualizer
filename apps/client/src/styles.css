@@ -5857,3 +5857,42 @@ button:disabled {
   color: var(--text-muted);
   font-size: 11px;
 }
+
+/* Tasks under a Plan section, and section chips on task rows. */
+.doc-section-tasks {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.doc-task .cat-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+.doc-task.task-done .cat-dot {
+  background: var(--green);
+}
+.doc-task.task-working .cat-dot {
+  background: var(--amber);
+}
+.doc-task.task-failed .cat-dot,
+.doc-task.task-stopped .cat-dot {
+  background: var(--coral);
+}
+.section-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-decoration: none;
+}
+.section-chip:hover {
+  color: var(--text);
+  border-color: rgba(var(--silver-rgb), 0.45);
+}

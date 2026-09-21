@@ -313,6 +313,35 @@ export const MessageSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
+// The plan document: what the project should become, in sections. Written
+// by you directly or through the coordinator; the task plan below is the
+// work derived from it.
+// ---------------------------------------------------------------------------
+
+export const PlanSectionIdSchema = z.enum([
+  'overview',
+  'features',
+  'ui',
+  'visual',
+  'data',
+  'risks',
+]);
+
+export const PLAN_SECTIONS: Readonly<
+  Record<
+    z.infer<typeof PlanSectionIdSchema>,
+    { readonly title: string; readonly hint: string }
+  >
+> = {
+  overview: { title: 'Overview', hint: 'What this is and who it is for.' },
+  features: { title: 'Features', hint: 'What it must do, one line each.' },
+  ui: { title: 'UI', hint: 'Screens, flows, and interactions.' },
+  visual: { title: 'Visual', hint: 'Look, tone, typography, colour.' },
+  data: { title: 'Data', hint: 'What is stored, where, and how it moves.' },
+  risks: { title: 'Risks', hint: 'What could go wrong or is undecided.' },
+};
+
+// ---------------------------------------------------------------------------
 // Agents, tasks, and current work
 // ---------------------------------------------------------------------------
 
@@ -379,6 +408,8 @@ export const AgentTaskSchema = z
     expectedOutputs: z.array(z.string().min(1)),
     requiredChecks: z.array(z.string().min(1)),
     modelTier: ModelTierSchema.optional(),
+    // Which Plan document sections this task implements.
+    sections: z.array(PlanSectionIdSchema).optional(),
     state: AgentTaskStateSchema,
     // When work on it began (first move to working), for elapsed time.
     startedAt: z.iso.datetime().optional(),
@@ -481,35 +512,6 @@ export const OutputSchema = z.strictObject({
   producedAtSequence: SequenceSchema,
 });
 
-// ---------------------------------------------------------------------------
-// The plan document: what the project should become, in sections. Written
-// by you directly or through the coordinator; the task plan below is the
-// work derived from it.
-// ---------------------------------------------------------------------------
-
-export const PlanSectionIdSchema = z.enum([
-  'overview',
-  'features',
-  'ui',
-  'visual',
-  'data',
-  'risks',
-]);
-
-export const PLAN_SECTIONS: Readonly<
-  Record<
-    z.infer<typeof PlanSectionIdSchema>,
-    { readonly title: string; readonly hint: string }
-  >
-> = {
-  overview: { title: 'Overview', hint: 'What this is and who it is for.' },
-  features: { title: 'Features', hint: 'What it must do, one line each.' },
-  ui: { title: 'UI', hint: 'Screens, flows, and interactions.' },
-  visual: { title: 'Visual', hint: 'Look, tone, typography, colour.' },
-  data: { title: 'Data', hint: 'What is stored, where, and how it moves.' },
-  risks: { title: 'Risks', hint: 'What could go wrong or is undecided.' },
-};
-
 export const DocumentEditSourceSchema = z.enum([
   'user',
   'coordinator',
@@ -546,6 +548,8 @@ export const PlanTaskSchema = z.strictObject({
   expectedOutputs: z.array(z.string().min(1)),
   requiredChecks: z.array(z.string().min(1)),
   modelTier: ModelTierSchema.optional(),
+  // Which Plan document sections this task implements.
+  sections: z.array(PlanSectionIdSchema).optional(),
 });
 
 export const PlanSchema = z

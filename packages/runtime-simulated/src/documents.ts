@@ -238,3 +238,97 @@ export function applyDocumentEdit(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// From a work request to the Plan document. Keyword-level: enough for the
+// simulator to leave a plan that reads like the request; live models write
+// the real thing through their tools.
+// ---------------------------------------------------------------------------
+
+const FEATURE_SPLIT =
+  /\s*(?:,|;|[.!?](?=\s|$)|\band\b|\bthen\b|\bplus\b|\bwith\b)\s*/i;
+const LEADING_VERBS =
+  /^(?:please\s+)?(?:build|create|make|add|implement|write|set up|setup|ship|design)?\s*(?:a|an|the|me)?\s+/i;
+
+function sentenceCase(text: string): string {
+  const trimmed = text.trim().replace(/[.!]+$/, '');
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+// The first sentence of the request, as the project's one-line overview.
+export function overviewFromRequest(body: string): string {
+  const first = body.trim().split(/(?<=[.!?])\s+/)[0] ?? body.trim();
+  return sentenceCase(first).slice(0, 140);
+}
+
+// Feature lines from a request: its comma/"and"/"then" parts, each with
+// the leading "build a"/"add" stripped. Short fragments are dropped.
+export function featuresFromRequest(body: string): string[] {
+  const seen = new Set<string>();
+  const features: string[] = [];
+  for (const part of body.split(FEATURE_SPLIT)) {
+    const line = sentenceCase(part.replace(LEADING_VERBS, ''));
+    if (line.length < 4 || line.split(/\s+/).length < 2) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    features.push(line);
+    if (features.length >= 6) break;
+  }
+  return features;
+}
+
+const SECTION_HINTS: Record<PlanSectionId, readonly string[]> = {
+  overview: [],
+  features: [],
+  ui: [
+    'ui',
+    'screen',
+    'page',
+    'form',
+    'button',
+    'layout',
+    'interface',
+    'component',
+    'view',
+    'modal',
+    'menu',
+  ],
+  visual: [
+    'visual',
+    'theme',
+    'color',
+    'colour',
+    'font',
+    'style',
+    'icon',
+    'logo',
+    'dark mode',
+  ],
+  data: [
+    'data',
+    'database',
+    'db',
+    'schema',
+    'storage',
+    'store',
+    'api',
+    'endpoint',
+    'sync',
+    'cache',
+    'migration',
+    'model',
+  ],
+  risks: ['risk', 'security', 'auth', 'permission', 'privacy', 'backup'],
+};
+
+// Which Plan sections a piece of text is about, by its words.
+export function sectionsForText(text: string): PlanSectionId[] {
+  const lower = ` ${text.toLowerCase()} `;
+  const hits = (Object.keys(SECTION_HINTS) as PlanSectionId[]).filter((id) =>
+    SECTION_HINTS[id].some(
+      (hint) => lower.includes(` ${hint}`) || lower.includes(`${hint} `),
+    ),
+  );
+  return hits;
+}

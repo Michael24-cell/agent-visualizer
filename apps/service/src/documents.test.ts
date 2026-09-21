@@ -243,4 +243,40 @@ describe('method document', () => {
       source: 'user',
     });
   });
+
+  it('a work request fills Overview and Features before the tasks are proposed', async () => {
+    const api = client(testConfig());
+    const { project } = await api.command('/api/projects', {
+      commandId: commandId(),
+      name: 'Docs',
+    });
+    const projectId = project.projection.projectId;
+    const coordinator = Object.values(project.projection.threads).find(
+      (thread) => thread.kind === 'coordinator',
+    )!;
+    const response = await api.command(
+      `/api/projects/${projectId}/threads/${coordinator.id}/messages`,
+      {
+        commandId: commandId(),
+        expectedSequence: coordinator.lastSequence,
+        body: 'Build a settings page with a preferences form and offline sync',
+        intent: 'start_work',
+      },
+    );
+    const doc = response.project.projection.planDocument;
+    expect(doc.sections.overview).toMatchObject({
+      lines: ['Build a settings page with a preferences form and offline sync'],
+      source: 'coordinator',
+    });
+    expect(doc.sections.features?.lines).toEqual([
+      'Settings page',
+      'Preferences form',
+      'Offline sync',
+    ]);
+    const plan = Object.values(response.project.projection.plans)[0]!;
+    expect(plan.tasks.map((row) => row.sections)).toEqual([
+      ['features', 'ui'],
+      ['features', 'data'],
+    ]);
+  });
 });

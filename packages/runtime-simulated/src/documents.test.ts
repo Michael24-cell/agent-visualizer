@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyDocumentEdit, parseDocumentEdit } from './documents.js';
+import {
+  applyDocumentEdit,
+  featuresFromRequest,
+  overviewFromRequest,
+  parseDocumentEdit,
+  sectionsForText,
+} from './documents.js';
 
 describe('parseDocumentEdit', () => {
   it('reads the section-colon form into plan and method sections', () => {
@@ -124,5 +130,38 @@ describe('applyDocumentEdit', () => {
     expect(applyDocumentEdit(['a'], edit('set', ['a']))).toMatchObject({
       changed: false,
     });
+  });
+});
+
+describe('request to plan document', () => {
+  it('takes an overview and feature lines out of a request', () => {
+    const body =
+      'Build a shared grocery list with offline sync, shared lists between household members and a dark mode. Keep it simple.';
+    expect(overviewFromRequest(body)).toBe(
+      'Build a shared grocery list with offline sync, shared lists between household members and a dark mode',
+    );
+    expect(featuresFromRequest(body)).toEqual([
+      'Shared grocery list',
+      'Offline sync',
+      'Shared lists between household members',
+      'Dark mode',
+      'Keep it simple',
+    ]);
+    expect(featuresFromRequest('add x')).toEqual([]);
+  });
+
+  it('maps text to the plan sections it is about', () => {
+    expect(
+      sectionsForText('Add a settings page with a preferences form'),
+    ).toEqual(['ui']);
+    expect(
+      sectionsForText('Store the cache in the database and sync it'),
+    ).toEqual(['data']);
+    expect(sectionsForText('Auth screen colours')).toEqual([
+      'ui',
+      'visual',
+      'risks',
+    ]);
+    expect(sectionsForText('do the thing')).toEqual([]);
   });
 });

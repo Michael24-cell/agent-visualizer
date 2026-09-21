@@ -941,6 +941,7 @@ export function applyProjectEvent(
           same(task.expectedOutputs, row.expectedOutputs) &&
           same(task.requiredChecks, row.requiredChecks) &&
           task.modelTier === row.modelTier &&
+          same(task.sections ?? [], row.sections ?? []) &&
           task.whySeparate === row.whySeparate &&
           task.whyThisAgent === row.whyThisAgent &&
           upstreamIds.every((id) => id !== undefined) &&
