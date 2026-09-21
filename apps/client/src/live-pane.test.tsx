@@ -165,7 +165,7 @@ afterEach(() => {
 });
 
 describe('live pane', () => {
-  it('shows persisted messages and sends chat and /start with the thread sequence', async () => {
+  it('shows persisted messages; /chat talks and a plain message gives an idle agent work', async () => {
     const initial = project();
     const target = liveTargets(initial).find((t) => t.kind === 'agent')!;
     vi.mocked(readMessages)
@@ -226,7 +226,7 @@ describe('live pane', () => {
     expect(await screen.findByText('Nothing yet.')).toBeTruthy();
     const box = screen.getByLabelText('Message Interface systems');
     const user = userEvent.setup();
-    await user.type(box, 'What changed?{Enter}');
+    await user.type(box, '/chat What changed?{Enter}');
     await waitFor(() =>
       expect(postMessage).toHaveBeenCalledWith('project_x', 'agent_a', {
         expectedSequence: 4,
@@ -237,7 +237,7 @@ describe('live pane', () => {
     expect(await screen.findByText('Nothing yet.')).toBeTruthy();
     expect(screen.getByText('What changed?')).toBeTruthy();
 
-    await user.type(box, '/start Build the form{Enter}');
+    await user.type(box, 'Build the form{Enter}');
     await waitFor(() =>
       expect(postMessage).toHaveBeenLastCalledWith('project_x', 'agent_a', {
         expectedSequence: 4,

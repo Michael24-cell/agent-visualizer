@@ -47,14 +47,17 @@ function authorLabel(message: Message, target: LiveTarget): string | undefined {
   return undefined;
 }
 
-// Slash commands understood in a live pane. Anything else is a chat message.
-//   /start <request>  give this agent work (start_work intent)
+// Typing into an agent pane gives it work when it has none in progress;
+// while it is busy, a message is a follow-up. Slash commands:
+//   /start <request>  give this agent work (same as typing when idle)
+//   /chat <message>   talk without starting work
 //   /stop             stop this agent's current work
 function parseLiveInput(
   value: string,
 ):
   | { kind: 'empty' }
   | { kind: 'chat'; body: string }
+  | { kind: 'chat_only'; body: string }
   | { kind: 'start'; body: string }
   | { kind: 'stop' }
   | { kind: 'unknown'; name: string } {
@@ -67,6 +70,10 @@ function parseLiveInput(
     return body
       ? { kind: 'start', body }
       : { kind: 'unknown', name: 'start (needs a request)' };
+  if (name === 'chat')
+    return body
+      ? { kind: 'chat_only', body }
+      : { kind: 'unknown', name: 'chat (needs a message)' };
   if (name === 'stop') return { kind: 'stop' };
   return { kind: 'unknown', name: name ?? '' };
 }
@@ -341,9 +348,7 @@ export function LivePane({
     const parsed = parseLiveInput(value);
     if (parsed.kind === 'empty') return;
     if (parsed.kind === 'unknown') {
-      setFeedback(
-        `/${parsed.name} is not a command here. Try /start or /stop.`,
-      );
+      setFeedback(`/${parsed.name} is not a command here. Try /chat or /stop.`);
       return;
     }
     if (parsed.kind === 'stop') {
@@ -360,7 +365,13 @@ export function LivePane({
       );
       return;
     }
-    const intent = parsed.kind === 'start' ? 'start_work' : 'chat';
+    const agentIdle =
+      target.kind === 'agent' &&
+      !['waiting', 'working', 'needs_you'].includes(target.agent.work);
+    const intent =
+      parsed.kind === 'start' || (parsed.kind === 'chat' && agentIdle)
+        ? 'start_work'
+        : 'chat';
     if (intent === 'start_work' && target.kind !== 'agent') {
       setFeedback(
         'The coordinator does not take work directly yet. Use /start in an agent pane.',
@@ -458,8 +469,7 @@ export function LivePane({
         <strong>{title}</strong>
         <span className="pane-task">
           {target.kind === 'agent'
-            ? (currentTask?.title ??
-              'No task yet — type to talk, /start to give it work')
+            ? (currentTask?.title ?? 'Nothing in progress — type what to do')
             : 'Plans the project with you'}
         </span>
         {target.kind === 'agent' && project.runtime.provider === 'openai' ? (
@@ -619,7 +629,12 @@ export function LivePane({
             value={value}
             placeholder={
               target.kind === 'agent'
-                ? `Message ${title} · /start to give it work`
+                ? currentTask &&
+                  ['waiting', 'working', 'needs_you'].includes(
+                    currentTask.state,
+                  )
+                  ? `Message ${title}`
+                  : `Tell ${title} what to do`
                 : `Tell ${title} what to build`
             }
             aria-label={`Message ${title}`}
