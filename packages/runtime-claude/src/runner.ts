@@ -3,7 +3,11 @@ import {
   type CanUseTool,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { AGENT_MODELS, type AgentModel } from '@harness/contracts';
+import {
+  AGENT_MODELS,
+  type AgentModel,
+  type ToolPolicy,
+} from '@harness/contracts';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { ClaudeMessageMapper, permissionAsk } from './mapper.js';
 
@@ -23,6 +27,8 @@ export interface LiveTaskInput {
   readonly maxTurns?: number;
   // The project's documents, when the runtime can offer them as tools.
   readonly documents?: ProjectDocuments | undefined;
+  // The Method's tool policy for this task, when one is pinned.
+  readonly tools?: ToolPolicy | undefined;
 }
 
 // What an agent may do with the Plan document: read it whole, or replace
@@ -81,6 +87,15 @@ export const LIVE_AGENT_TOOLS: readonly string[] = [
   'MultiEdit',
 ];
 
+// Documents only: no shell, no edits; Write stays and the Method's hard
+// rules name the file types (the SDK cannot filter by extension here).
+export const LIVE_AGENT_TOOLS_DOCS: readonly string[] = [
+  'Read',
+  'Grep',
+  'Glob',
+  'Write',
+];
+
 export const sdkFrameSource: FrameSource = (input, options) =>
   query({
     prompt: input.prompt,
@@ -88,7 +103,9 @@ export const sdkFrameSource: FrameSource = (input, options) =>
       cwd: input.cwd,
       model: AGENT_MODELS[input.model].modelId,
       systemPrompt: input.systemPrompt,
-      allowedTools: [...LIVE_AGENT_TOOLS],
+      allowedTools: [
+        ...(input.tools === 'docs' ? LIVE_AGENT_TOOLS_DOCS : LIVE_AGENT_TOOLS),
+      ],
       permissionMode: 'default',
       canUseTool: options.canUseTool,
       abortController: options.abortController,

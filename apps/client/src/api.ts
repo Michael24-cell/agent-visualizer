@@ -370,6 +370,23 @@ export async function overrideMethod(
   );
 }
 
+export async function resetMethod(
+  projectId: string,
+  expectedSequence: number,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/method/reset`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+        }),
+      })
+    ).json(),
+  );
+}
+
 export async function editPlanSection(
   projectId: string,
   expectedSequence: number,

@@ -143,6 +143,7 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
       messageId: MessageIdSchema.optional(),
     }),
   ),
+  projectEvent('method.overrides_cleared', z.strictObject({})),
   projectEvent(
     'method.snapshot_pinned',
     z.strictObject({ snapshot: MethodSnapshotSchema }),

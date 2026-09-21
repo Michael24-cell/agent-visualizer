@@ -206,8 +206,8 @@ describe('method document', () => {
     response = await api.command(`/api/projects/${projectId}/method`, {
       commandId: commandId(),
       expectedSequence: response.project.projection.lastSequence,
-      catalogId: 'method_evidence-led-delivery',
-      catalogVersion: '1.2.0',
+      catalogId: 'method_careful',
+      catalogVersion: '1.0.0',
     });
     const thread = response.project.projection.threads[coordinator.id]!;
     response = await api.command(url, {

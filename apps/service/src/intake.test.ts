@@ -237,8 +237,9 @@ describe('Method is optional and pinned per task', () => {
     const api = client(testConfig());
     const catalog = (await api.get('/api/methods')).json();
     expect(catalog.methods.map((m: { title: string }) => m.title)).toEqual([
-      'Evidence-led delivery',
+      'Careful',
       'Fast prototype',
+      'Docs only',
     ]);
     const created = await api.command('/api/projects', {
       commandId: commandId(),
@@ -292,7 +293,7 @@ describe('Method is optional and pinned per task', () => {
       commandId: commandId(),
       expectedSequence: early.project.projection.lastSequence,
       catalogId: 'method_fast-prototype',
-      catalogVersion: '0.3.0',
+      catalogVersion: '1.0.0',
     });
     expect(applied.project.projection.method).toMatchObject({
       version: 1,
@@ -329,8 +330,9 @@ describe('Method is optional and pinned per task', () => {
       started.project.projection.methodSnapshots[task.methodSnapshotId!]!;
     expect(snapshot).toMatchObject({ taskId: task.id, methodVersion: 1 });
     expect(snapshot.resolved.hardRules).toEqual([
-      'Mark every shortcut in a TODO.',
-      'Never touch persistence or auth code.',
+      'Write whole files; do not spend turns on precise edits.',
+      'Never touch persistence, auth, or deployment code.',
+      'Note every shortcut you take in the summary.',
     ]);
 
     // Override after the task started: method v2, snapshot untouched.
@@ -351,8 +353,9 @@ describe('Method is optional and pinned per task', () => {
       overridden.project.projection.methodSnapshots[task.methodSnapshotId!]
         ?.resolved.hardRules,
     ).toEqual([
-      'Mark every shortcut in a TODO.',
-      'Never touch persistence or auth code.',
+      'Write whole files; do not spend turns on precise edits.',
+      'Never touch persistence, auth, or deployment code.',
+      'Note every shortcut you take in the summary.',
     ]);
 
     // A plan assigned now pins v2 on both tasks.
@@ -425,7 +428,7 @@ describe('Method is optional and pinned per task', () => {
       },
     );
     expect(approved.project.projection.method?.definition.title).toBe(
-      'Evidence-led delivery',
+      'Careful',
     );
     await api.service.close();
   });
@@ -454,7 +457,7 @@ describe('Method is optional and pinned per task', () => {
       commandId: commandId(),
       expectedSequence: project.projection.lastSequence,
       catalogId: 'method_fast-prototype',
-      catalogVersion: '0.3.0',
+      catalogVersion: '1.0.0',
     });
     expect(applied.project.projection.proposals[offer!.id]?.state).toBe(
       'dismissed',

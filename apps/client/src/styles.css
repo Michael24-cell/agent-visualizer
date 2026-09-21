@@ -5896,3 +5896,20 @@ button:disabled {
   color: var(--text);
   border-color: rgba(var(--silver-rgb), 0.45);
 }
+
+/* The Method a task runs under, in the pane header. */
+.pane-method {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(var(--silver-rgb), 0.35);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+@container (max-width: 430px) {
+  .pane-header .pane-method {
+    display: none;
+  }
+}

@@ -10,6 +10,7 @@ import {
   BriefFieldIdSchema,
   MethodDefinitionSchema,
   MethodOverrideCommandSchema,
+  MethodResetCommandSchema,
   PlanSectionCommandSchema,
   AskDecisionCommandSchema,
   AskIdSchema,
@@ -262,6 +263,22 @@ export function registerProjectRoutes(
       }
       const result = handle(() =>
         projects.overrideMethod(params.data.projectId, command.data),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return CommandResponseSchema.parse(result.value);
+    },
+  );
+
+  service.post(
+    '/api/projects/:projectId/method/reset',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      const command = MethodResetCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('method reset'));
+      }
+      const result = handle(() =>
+        projects.resetMethod(params.data.projectId, command.data),
       );
       if (!result.ok) return reply.code(result.status).send(result.body);
       return CommandResponseSchema.parse(result.value);

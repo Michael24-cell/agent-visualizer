@@ -39,6 +39,7 @@ import {
   type MessageIntent,
   type MessagesQuery,
   type MethodOverrideCommand,
+  type MethodResetCommand,
   type Plan,
   type PlanTask,
   type PlanSectionCommand,
@@ -769,6 +770,9 @@ export class ProjectService {
         }),
         prompt: buildTaskPrompt(task),
         documents,
+        ...(snapshot?.resolved.agentDefaults?.tools
+          ? { tools: snapshot.resolved.agentDefaults.tools }
+          : {}),
       },
       { emit, ask },
     );
@@ -2014,7 +2018,7 @@ export class ProjectService {
       )
     )
       return;
-    const method = findMethod('method_evidence-led-delivery', '1.2.0')!;
+    const method = findMethod('method_careful', '1.0.0')!;
     const proposalId = ProposalIdSchema.parse(`proposal_${suffix}_method`);
     batch.emit(
       'proposal.opened',
@@ -2155,6 +2159,32 @@ export class ProjectService {
         { sectionId: command.sectionId, value: command.value, source: 'user' },
         { source: 'user' },
       );
+      return batch.commit();
+    });
+  }
+
+  resetMethod(
+    projectId: ProjectId,
+    command: MethodResetCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      if (!projection.method) {
+        throw new ProjectCommandError('not_found', 'No Method is applied.');
+      }
+      this.assertSequence(
+        'Method',
+        projection.method.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit('method.overrides_cleared', {}, { source: 'user' });
       return batch.commit();
     });
   }

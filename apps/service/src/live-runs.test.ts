@@ -526,7 +526,7 @@ describe('live runs', () => {
       offered.push(Boolean(input.documents?.readMethod));
       if (input.documents?.updateMethodSection) {
         const before = input.documents.readMethod!();
-        expect(before.title).toBe('Evidence-led delivery');
+        expect(before.title).toBe('Careful');
         reply = await input.documents.updateMethodSection('checks', [
           'npm test',
         ]);
@@ -542,8 +542,8 @@ describe('live runs', () => {
     service.applyMethod(ids.projectId as never, {
       commandId: commandId(),
       expectedSequence: project.projection.lastSequence,
-      catalogId: 'method_evidence-led-delivery' as never,
-      catalogVersion: '1.2.0',
+      catalogId: 'method_careful' as never,
+      catalogVersion: '1.0.0',
     });
     startWork(service, ids, 'Second');
     await service.whenIdle();

@@ -5,6 +5,7 @@ import {
   BriefFieldIdSchema,
   PLAN_SECTIONS,
   PlanSectionIdSchema,
+  TOOL_POLICIES,
   agentModel,
   MethodSectionIdSchema,
   type BriefFieldId,
@@ -19,6 +20,7 @@ import {
   listMethods,
   overrideMethod,
   readEvents,
+  resetMethod,
   updateBriefField,
 } from './api';
 import { ArtifactsView } from './artifacts';
@@ -298,6 +300,18 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
           <p className="field-state">
             When to use: {method.definition.whenToUse}
           </p>
+          <p className="field-state">
+            Tools:{' '}
+            {
+              TOOL_POLICIES[method.definition.agentDefaults?.tools ?? 'full']
+                .label
+            }{' '}
+            ·{' '}
+            {
+              TOOL_POLICIES[method.definition.agentDefaults?.tools ?? 'full']
+                .note
+            }
+          </p>
           <DocumentChanges project={project} document="method" />
           <div className="doc">
             {MethodSectionIdSchema.options.map((sectionId) => {
@@ -328,6 +342,28 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
             Customizing changes future tasks only; tasks already assigned keep
             the Method they started with.
           </p>
+          {method.overrides.length ? (
+            <div className="ask-actions">
+              <button
+                type="button"
+                className="secondary-action small"
+                disabled={busy}
+                onClick={() => {
+                  void resetMethod(projectId, method.lastSequence)
+                    .then((result) => onProject(result.project))
+                    .catch((error: unknown) =>
+                      onError(
+                        error instanceof Error
+                          ? error.message
+                          : 'The Method was not reset.',
+                      ),
+                    );
+                }}
+              >
+                Reset to catalog
+              </button>
+            </div>
+          ) : null}
         </>
       ) : (
         <>
@@ -349,6 +385,16 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
                 <p className="field-value">{definition.purpose}</p>
                 <p className="field-state">
                   When to use: {definition.whenToUse}
+                </p>
+                <p className="field-state">
+                  Tools:{' '}
+                  {
+                    TOOL_POLICIES[definition.agentDefaults?.tools ?? 'full']
+                      .label
+                  }
+                  {definition.agentDefaults?.modelTier
+                    ? ` · ${definition.agentDefaults.modelTier} model`
+                    : ''}
                 </p>
                 <div className="ask-actions">
                   <button

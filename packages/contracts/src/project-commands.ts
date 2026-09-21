@@ -132,6 +132,9 @@ export const MethodOverrideCommandSchema = z.strictObject({
   value: z.array(z.string().trim().min(1)),
 });
 
+// Targets the method; expectedSequence is method.lastSequence.
+export const MethodResetCommandSchema = z.strictObject(CommandBaseShape);
+
 // Targets the plan document; expectedSequence is planDocument.lastSequence.
 export const PlanSectionCommandSchema = z.strictObject({
   ...CommandBaseShape,
@@ -281,6 +284,7 @@ export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
 export type RenameAgentCommand = z.infer<typeof RenameAgentCommandSchema>;
 export type SetTrustCommand = z.infer<typeof SetTrustCommandSchema>;
+export type MethodResetCommand = z.infer<typeof MethodResetCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;

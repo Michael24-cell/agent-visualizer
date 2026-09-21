@@ -129,6 +129,25 @@ export const BriefSchema = z.strictObject({
 
 export const ModelTierSchema = z.enum(['light', 'standard', 'deep']);
 
+export const ToolPolicySchema = z.enum(['full', 'basic', 'docs']);
+
+export const TOOL_POLICIES: Readonly<
+  Record<z.infer<typeof ToolPolicySchema>, { label: string; note: string }>
+> = {
+  full: {
+    label: 'All tools',
+    note: 'Read, search, run commands, edit and write files.',
+  },
+  basic: {
+    label: 'Whole-file writes',
+    note: 'Like all tools, but files are rewritten whole (safer for small models).',
+  },
+  docs: {
+    label: 'Documents only',
+    note: 'Read and search; write only .md and .txt files; no shell.',
+  },
+};
+
 // The model an agent runs on. Tiers are what plans and Methods ask for;
 // the model is what the user picks, defaulting from the tier.
 export const AgentModelSchema = z.enum(['opus', 'sonnet', 'haiku']);
@@ -207,7 +226,12 @@ export const MethodDefinitionSchema = z.strictObject({
   checks: z.array(z.string().min(1)),
   scopeRestrictions: z.array(z.string().min(1)),
   agentDefaults: z
-    .strictObject({ modelTier: ModelTierSchema.optional() })
+    .strictObject({
+      modelTier: ModelTierSchema.optional(),
+      // Which tools a live agent gets under this Method: everything,
+      // whole-file writes only, or documents only (no code, no shell).
+      tools: ToolPolicySchema.optional(),
+    })
     .optional(),
 });
 
@@ -660,6 +684,7 @@ export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
 export type Activity = z.infer<typeof ActivitySchema>;
 export type TrustPolicy = z.infer<typeof TrustPolicySchema>;
+export type ToolPolicy = z.infer<typeof ToolPolicySchema>;
 
 export function projectTrust(project: {
   trust?: TrustPolicy | undefined;

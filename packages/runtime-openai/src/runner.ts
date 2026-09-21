@@ -10,6 +10,7 @@ import {
   LOCAL_AGENT_TOOLS,
   documentTools,
   sdkInput,
+  toolsForPolicy,
   type ToolDefinition,
 } from './tools.js';
 
@@ -201,8 +202,9 @@ export function runOpenAiTask(
   // Follow-ups from the user, appended before the next model turn.
   const inbox: string[] = [];
   let finished = false;
+  // The Method's policy narrows or widens the runtime's default set.
   const tools = [
-    ...(options.tools ?? LOCAL_AGENT_TOOLS),
+    ...toolsForPolicy(input.tools, options.tools ?? LOCAL_AGENT_TOOLS),
     ...(input.documents ? documentTools(input.documents) : []),
   ];
   const maxTurns = options.maxTurns ?? 30;

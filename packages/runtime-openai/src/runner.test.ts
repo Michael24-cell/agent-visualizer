@@ -688,3 +688,52 @@ describe('rate limits', () => {
     expect(retryAfterMs(null, 'nothing useful')).toBe(60_000);
   });
 });
+
+describe('tool policies from the Method', () => {
+  it('docs only: no shell, writes limited to .md/.txt', async () => {
+    const cwd = project();
+    let offered: string[] = [];
+    const { fetchFn, requests } = server([
+      {
+        tool_calls: [
+          { name: 'write_file', args: { path: 'src/app.ts', content: 'nope' } },
+        ],
+      },
+      {
+        tool_calls: [
+          { name: 'write_file', args: { path: 'NOTES.md', content: '# ok' } },
+        ],
+      },
+      { content: 'Documented.' },
+    ]);
+    const spy: typeof fetch = async (url, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        tools: { function: { name: string } }[];
+      };
+      offered = body.tools.map((t) => t.function.name);
+      return fetchFn(url, init);
+    };
+    const seen = collect();
+    await runOpenAiTask({ ...input(cwd), tools: 'docs' }, seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: spy,
+    }).done;
+    expect(offered).toEqual([
+      'read_file',
+      'list_files',
+      'search_files',
+      'write_file',
+    ]);
+    const first = requests[1]!.messages.find((m) => m.role === 'tool')!;
+    expect(first.content).toMatch(/Only \.md and \.txt/);
+    expect(readFileSync(join(cwd, 'src', 'app.ts'), 'utf8')).toContain('"hi"');
+    expect(readFileSync(join(cwd, 'NOTES.md'), 'utf8')).toBe('# ok');
+    expect(seen.batches.at(-1)).toEqual([
+      {
+        kind: 'finish',
+        reason: 'Unverified — no command was run. Documented.',
+      },
+    ]);
+  });
+});

@@ -340,7 +340,7 @@ describe('recovery', () => {
       commandId: commandId(),
       expectedSequence: project.projection.lastSequence,
       catalogId: 'method_fast-prototype',
-      catalogVersion: '0.3.0',
+      catalogVersion: '1.0.0',
     });
     await record(`/api/projects/${projectId}/method/overrides`, {
       commandId: commandId(),

@@ -8,6 +8,7 @@ import {
 import {
   AGENT_MODELS,
   AgentModelSchema,
+  TOOL_POLICIES,
   agentModel,
   type Activity,
   type Ask,
@@ -723,6 +724,18 @@ export function LivePane({
       : undefined;
   const canStop =
     work !== undefined && ['waiting', 'working', 'needs_you'].includes(work);
+  // The Method the current task runs under, pinned when it started.
+  const snapshot = currentTask?.methodSnapshotId
+    ? project.projection.methodSnapshots[currentTask.methodSnapshotId]
+    : undefined;
+  const methodChip = snapshot
+    ? {
+        label: snapshot.resolved.title,
+        note: `${snapshot.resolved.purpose} Tools: ${
+          TOOL_POLICIES[snapshot.resolved.agentDefaults?.tools ?? 'full'].label
+        }.`,
+      }
+    : undefined;
   const elapsed =
     currentTask?.state === 'working' && currentTask.startedAt
       ? formatElapsed(now - Date.parse(currentTask.startedAt))
@@ -838,6 +851,11 @@ export function LivePane({
             ? (currentTask?.title ?? 'Nothing in progress — type what to do')
             : 'Plans the project with you'}
         </span>
+        {methodChip ? (
+          <span className="pane-method" title={methodChip.note}>
+            {methodChip.label}
+          </span>
+        ) : null}
         {target.kind === 'agent' && project.runtime.provider === 'openai' ? (
           <span
             className="pane-model-fixed"

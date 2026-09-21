@@ -320,6 +320,49 @@ export const LOCAL_AGENT_TOOLS_FULL: readonly ToolDefinition[] = [
   writeTool,
 ];
 
+const DOC_EXTENSIONS = ['.md', '.markdown', '.txt'];
+
+// Documents only: read and search anything, write documents, no shell.
+export const docsWriteTool: ToolDefinition = {
+  ...writeTool,
+  description:
+    'Create or overwrite a document (.md or .txt) with the given content. Code files cannot be written under this Method.',
+  async run(input, context) {
+    const path = str(input, 'path');
+    if (!DOC_EXTENSIONS.some((ext) => path.toLowerCase().endsWith(ext))) {
+      return {
+        text: `Only .md and .txt files may be written under this Method; ${path} was not changed.`,
+        isError: true,
+      };
+    }
+    return writeTool.run(input, context);
+  },
+};
+
+export const LOCAL_AGENT_TOOLS_DOCS: readonly ToolDefinition[] = [
+  readTool,
+  globTool,
+  grepTool,
+  docsWriteTool,
+];
+
+// The tool set for a Method's policy, given the runtime's own default.
+export function toolsForPolicy(
+  policy: 'full' | 'basic' | 'docs' | undefined,
+  fallback: readonly ToolDefinition[],
+): readonly ToolDefinition[] {
+  switch (policy) {
+    case 'full':
+      return LOCAL_AGENT_TOOLS_FULL;
+    case 'basic':
+      return LOCAL_AGENT_TOOLS;
+    case 'docs':
+      return LOCAL_AGENT_TOOLS_DOCS;
+    default:
+      return fallback;
+  }
+}
+
 // The SDK-style tool input shape, so permissionAsk() and the intents read
 // like the Claude runtime's ("file_path", "command").
 export function sdkInput(

@@ -610,6 +610,28 @@ export function applyProjectEvent(
       break;
     }
 
+    case 'method.overrides_cleared': {
+      if (!next.method) {
+        throw new ProjectionError(
+          'missing_entity',
+          'No method is applied to this project.',
+        );
+      }
+      if (next.method.overrides.length === 0) {
+        throw new ProjectionError(
+          'invalid_payload',
+          'The Method already matches its catalog entry.',
+        );
+      }
+      next.method = {
+        ...next.method,
+        overrides: [],
+        version: next.method.version + 1,
+        lastSequence: sequence,
+      };
+      break;
+    }
+
     case 'method.snapshot_pinned': {
       const snapshot = event.payload.snapshot;
       assertSequenceField(

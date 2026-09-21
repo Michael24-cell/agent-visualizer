@@ -875,6 +875,14 @@ describe('brief and method', () => {
     expect(s.p.methodSnapshots.methodsnap_1?.resolved.hardRules).toEqual([
       'Projection is authoritative.',
     ]);
+    // Reset to catalog clears every override and bumps the version.
+    s.emit('method.overrides_cleared', {});
+    expect(s.p.method?.overrides).toEqual([]);
+    expect(s.p.method?.version).toBe(3);
+    expect(resolveMethod(s.p.method!).hardRules).toEqual(method.hardRules);
+    expect(s.attempt('method.overrides_cleared', {})).toThrowError(
+      code('invalid_payload'),
+    );
     expect(
       s.attempt('method.snapshot_pinned', {
         snapshot: {
