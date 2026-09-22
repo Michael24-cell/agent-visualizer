@@ -6,10 +6,16 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+export function envLocalPath(
+  root = join(dirname(fileURLToPath(import.meta.url)), '..'),
+) {
+  return join(root, '.env.local');
+}
+
 export function loadEnvLocal(
   root = join(dirname(fileURLToPath(import.meta.url)), '..'),
 ) {
-  const path = join(root, '.env.local');
+  const path = envLocalPath(root);
   let text;
   try {
     text = readFileSync(path, 'utf8');
