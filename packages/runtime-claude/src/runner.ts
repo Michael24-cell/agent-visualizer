@@ -29,6 +29,9 @@ export interface LiveTaskInput {
   readonly documents?: ProjectDocuments | undefined;
   // The Method's tool policy for this task, when one is pinned.
   readonly tools?: ToolPolicy | undefined;
+  // For OpenAI-compatible runtimes: the model id to use for this task,
+  // overriding the runtime's configured model.
+  readonly endpointModel?: string | undefined;
 }
 
 // What an agent may do with the Plan document: read it whole, or replace

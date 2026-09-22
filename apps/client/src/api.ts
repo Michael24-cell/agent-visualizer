@@ -243,7 +243,7 @@ export async function setAgentModel(
   projectId: string,
   agentId: string,
   expectedSequence: number,
-  model: AgentModel,
+  choice: { model?: AgentModel; endpointModel?: string },
 ): Promise<CommandResponse> {
   return CommandResponseSchema.parse(
     await (
@@ -252,7 +252,7 @@ export async function setAgentModel(
         body: JSON.stringify({
           commandId: crypto.randomUUID(),
           expectedSequence,
-          model,
+          ...choice,
         }),
       })
     ).json(),

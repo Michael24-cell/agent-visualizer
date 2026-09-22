@@ -395,6 +395,9 @@ export const AgentSchema = z.strictObject({
   // Optional so agents recorded before models were chosen still replay;
   // read it through agentModel().
   model: AgentModelSchema.optional(),
+  // For OpenAI-compatible runtimes: the endpoint's model id this agent
+  // uses, when different from the configured default.
+  endpointModel: z.string().min(1).max(120).optional(),
   work: AgentWorkStateSchema,
   currentTaskId: TaskIdSchema.optional(),
   taskIds: z.array(TaskIdSchema),

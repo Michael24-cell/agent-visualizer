@@ -196,8 +196,12 @@ async function complete(
 export function runOpenAiTask(
   input: LiveTaskInput,
   sink: LiveTaskSink,
-  options: OpenAiRuntimeOptions,
+  baseOptions: OpenAiRuntimeOptions,
 ): LiveTask {
+  // The agent's own model choice wins over the runtime's default.
+  const options: OpenAiRuntimeOptions = input.endpointModel
+    ? { ...baseOptions, model: input.endpointModel }
+    : baseOptions;
   const abortController = new AbortController();
   // Follow-ups from the user, appended before the next model turn.
   const inbox: string[] = [];

@@ -11,6 +11,8 @@ import {
   TOOL_POLICIES,
   agentModel,
   type Activity,
+  type Agent,
+  type AgentModel,
   type Ask,
   type Check,
   type Message,
@@ -22,6 +24,7 @@ import { Markdown } from './markdown';
 import {
   ApiError,
   advanceAgent,
+  listRuntimeModels,
   decideAsk,
   decideProposal,
   postMessage,
@@ -37,7 +40,7 @@ import {
   workLabels,
   type LiveTarget,
 } from './live';
-import { runtimeNote } from './project-notes';
+import { runtimeLabel } from './project-notes';
 
 // A pane on a real, persisted thread. Everything shown here came back from
 // the service: messages are read by cursor, replies arrive in the command
@@ -223,6 +226,91 @@ function AskCard({
       </div>
     </li>
   );
+}
+
+// Which model this agent runs on, chosen at the bottom of the composer.
+// Claude: the three tiers. OpenAI-compatible: whatever the endpoint lists.
+function ModelSelect({
+  project,
+  agent,
+  busy,
+  onChoose,
+}: {
+  project: ProjectResponse;
+  agent: Agent;
+  busy: boolean;
+  onChoose: (
+    choice: { model?: AgentModel; endpointModel?: string },
+    label: string,
+  ) => void;
+}) {
+  const provider = project.runtime.provider;
+  const [models, setModels] = useState<string[]>();
+  useEffect(() => {
+    if (provider !== 'openai') return;
+    let active = true;
+    void listRuntimeModels()
+      .then((list) => {
+        if (active) setModels(list);
+      })
+      .catch(() => {
+        if (active) setModels([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [provider]);
+
+  if (provider === 'openai') {
+    const current = agent.endpointModel ?? project.runtime.model ?? '';
+    const options = [...new Set([current, ...(models ?? [])])].filter(Boolean);
+    return (
+      <label className="composer-model" title="Model for this agent">
+        <span className="visually-hidden">Model for {agent.name}</span>
+        <select
+          value={current}
+          disabled={busy}
+          onChange={(event) =>
+            onChoose(
+              { endpointModel: event.target.value },
+              shortModelName(event.target.value),
+            )
+          }
+        >
+          {options.map((id) => (
+            <option key={id} value={id}>
+              {shortModelName(id)}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  const tier = agentModel(agent);
+  return (
+    <label className="composer-model" title={AGENT_MODELS[tier].note}>
+      <span className="visually-hidden">Model for {agent.name}</span>
+      <select
+        value={tier}
+        disabled={busy}
+        onChange={(event) => {
+          const model = AgentModelSchema.parse(event.target.value);
+          onChoose({ model }, AGENT_MODELS[model].label);
+        }}
+      >
+        {AgentModelSchema.options.map((model) => (
+          <option key={model} value={model}>
+            {AGENT_MODELS[model].label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// "openai/gpt-oss-120b" → "gpt-oss-120b"; ids stay unique enough to read.
+function shortModelName(id: string): string {
+  return id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
 }
 
 // The agent's name in the pane header; click to rename.
@@ -867,44 +955,6 @@ export function LivePane({
             {methodChip.label}
           </span>
         ) : null}
-        {target.kind === 'agent' && project.runtime.provider === 'openai' ? (
-          <span
-            className="pane-model-fixed"
-            title={runtimeNote(project.runtime)}
-          >
-            {project.runtime.model}
-          </span>
-        ) : null}
-        {target.kind === 'agent' && project.runtime.provider !== 'openai' ? (
-          <label className="pane-model">
-            <span className="visually-hidden">Model for {title}</span>
-            <select
-              value={agentModel(target.agent)}
-              disabled={busy}
-              title={AGENT_MODELS[agentModel(target.agent)].note}
-              onChange={(event) => {
-                const agent = target.agent;
-                const model = AgentModelSchema.parse(event.target.value);
-                void run(
-                  () =>
-                    setAgentModel(
-                      projectId,
-                      agent.id,
-                      agent.lastSequence,
-                      model,
-                    ),
-                  `${AGENT_MODELS[model].label} from the next step on.`,
-                );
-              }}
-            >
-              {AgentModelSchema.options.map((model) => (
-                <option key={model} value={model}>
-                  {AGENT_MODELS[model].label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
         {work ? (
           <span className={`pane-state work-${work}`}>
             {workLabels[work]}
@@ -1100,11 +1150,39 @@ export function LivePane({
             onKeyDown={onKey}
             disabled={busy || !loaded}
           />
-          {feedback ? (
-            <p className="composer-feedback" role="status">
-              {feedback}
-            </p>
-          ) : null}
+          <div className="composer-bar">
+            {target.kind === 'agent' && project.runtime.mode === 'live' ? (
+              <ModelSelect
+                project={project}
+                agent={target.agent}
+                busy={busy}
+                onChoose={(choice, label) => {
+                  const agent = target.agent;
+                  void run(
+                    () =>
+                      setAgentModel(
+                        projectId,
+                        agent.id,
+                        agent.lastSequence,
+                        choice,
+                      ),
+                    `${label} from the next task on.`,
+                  );
+                }}
+              />
+            ) : (
+              <span className="composer-note">
+                {target.kind === 'agent'
+                  ? runtimeLabel(project.runtime)
+                  : 'Coordinator'}
+              </span>
+            )}
+            {feedback ? (
+              <p className="composer-feedback" role="status">
+                {feedback}
+              </p>
+            ) : null}
+          </div>
         </div>
         <button
           type="submit"

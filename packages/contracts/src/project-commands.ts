@@ -77,10 +77,15 @@ export const RenameAgentCommandSchema = z.strictObject({
 });
 
 // Targets an agent; expectedSequence is that agent's lastSequence.
-export const SetAgentModelCommandSchema = z.strictObject({
-  ...CommandBaseShape,
-  model: AgentModelSchema,
-});
+export const SetAgentModelCommandSchema = z
+  .strictObject({
+    ...CommandBaseShape,
+    model: AgentModelSchema.optional(),
+    endpointModel: z.string().trim().min(1).max(120).optional(),
+  })
+  .refine((command) => command.model || command.endpointModel, {
+    message: 'A model change names a model.',
+  });
 
 // Which runtime produces coordinator and agent replies. Runtime state,
 // reported so the client can say so honestly.

@@ -737,3 +737,31 @@ describe('tool policies from the Method', () => {
     ]);
   });
 });
+
+describe('per-agent endpoint model', () => {
+  it('sends the agent model instead of the runtime default', async () => {
+    const cwd = project();
+    let sent = '';
+    const fetchFn: typeof fetch = async (_url, init) => {
+      sent = (JSON.parse(String(init?.body)) as { model: string }).model;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    await runOpenAiTask(
+      { ...input(cwd), endpointModel: 'qwen/qwen3.8-27b' },
+      collect().sink,
+      {
+        baseUrl: 'http://fake/v1',
+        model: 'openai/gpt-oss-120b',
+        fetch: fetchFn,
+        maxTurns: 1,
+      },
+    ).done;
+    expect(sent).toBe('qwen/qwen3.8-27b');
+  });
+});

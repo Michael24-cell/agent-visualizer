@@ -732,13 +732,21 @@ export function applyProjectEvent(
 
     case 'agent.model_changed': {
       const agent = requireAgent(next, event.payload.agentId);
-      if (agent.model === event.payload.model) {
+      const { model, endpointModel } = event.payload;
+      const sameTier = model === undefined || agent.model === model;
+      const sameEndpoint =
+        endpointModel === undefined || agent.endpointModel === endpointModel;
+      if (sameTier && sameEndpoint) {
         throw new ProjectionError(
           'invalid_payload',
-          `Agent ${agent.id} already runs on ${agent.model}.`,
+          `Agent ${agent.id} already runs on that model.`,
         );
       }
-      next.agents[agent.id] = { ...agent, model: event.payload.model };
+      next.agents[agent.id] = {
+        ...agent,
+        ...(model ? { model } : {}),
+        ...(endpointModel ? { endpointModel } : {}),
+      };
       targets.agent(agent.id);
       break;
     }

@@ -156,7 +156,17 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
   ),
   projectEvent(
     'agent.model_changed',
-    z.strictObject({ agentId: AgentIdSchema, model: AgentModelSchema }),
+    z
+      .strictObject({
+        agentId: AgentIdSchema,
+        // The Claude tier, or the endpoint model id, whichever the
+        // runtime in use understands. At least one is given.
+        model: AgentModelSchema.optional(),
+        endpointModel: z.string().min(1).max(120).optional(),
+      })
+      .refine((payload) => payload.model || payload.endpointModel, {
+        message: 'A model change names a model.',
+      }),
   ),
 
   projectEvent('plan.recorded', z.strictObject({ plan: PlanSchema })),

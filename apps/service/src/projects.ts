@@ -794,6 +794,7 @@ export class ProjectService {
         }),
         prompt: buildTaskPrompt(task),
         documents,
+        ...(agent.endpointModel ? { endpointModel: agent.endpointModel } : {}),
         ...(snapshot?.resolved.agentDefaults?.tools
           ? { tools: snapshot.resolved.agentDefaults.tools }
           : {}),
@@ -1125,7 +1126,13 @@ export class ProjectService {
       );
       batch.emit(
         'agent.model_changed',
-        { agentId, model: command.model },
+        {
+          agentId,
+          ...(command.model ? { model: command.model } : {}),
+          ...(command.endpointModel
+            ? { endpointModel: command.endpointModel }
+            : {}),
+        },
         { agentId, source: 'user' },
       );
       return batch.commit();

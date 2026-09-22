@@ -212,4 +212,43 @@ describe('agent models', () => {
     }
     expect(agents.some((agent) => agent.model === 'opus')).toBe(true);
   });
+
+  it('records an endpoint model for OpenAI-compatible runtimes beside the Claude tier', async () => {
+    const api = client(testConfig());
+    const { project } = await api.command('/api/projects', {
+      commandId: commandId(),
+      name: 'Models',
+    });
+    const projectId = project.projection.projectId;
+    const agent = Object.values(project.projection.agents)[0]!;
+    const url = `/api/projects/${projectId}/agents/${agent.id}/model`;
+    const changed = await api.command(url, {
+      commandId: commandId(),
+      expectedSequence: agent.lastSequence,
+      endpointModel: 'qwen/qwen3.8-27b',
+    });
+    const updated = changed.project.projection.agents[agent.id]!;
+    expect(updated).toMatchObject({
+      model: 'sonnet',
+      endpointModel: 'qwen/qwen3.8-27b',
+    });
+    // Neither field: refused. Same again: refused.
+    expect(
+      (
+        await api.post(url, {
+          commandId: commandId(),
+          expectedSequence: updated.lastSequence,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await api.post(url, {
+          commandId: commandId(),
+          expectedSequence: updated.lastSequence,
+          endpointModel: 'qwen/qwen3.8-27b',
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
 });
