@@ -4769,7 +4769,7 @@ button:disabled {
 .plan-tasks li {
   display: grid;
   grid-template-columns: 8px 18px minmax(0, 1fr);
-  grid-template-areas: 'dot index title' '. . agent';
+  grid-template-areas: 'dot index title' '. . lines' '. . agent';
   align-items: baseline;
   column-gap: 10px;
   row-gap: 2px;
@@ -4787,6 +4787,15 @@ button:disabled {
 }
 .plan-tasks li > .plan-task-agent {
   grid-area: agent;
+}
+.plan-tasks li > .plan-task-objective {
+  grid-area: lines;
+}
+.plan-task-objective {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 .plan-task-index {
   color: var(--text-muted);

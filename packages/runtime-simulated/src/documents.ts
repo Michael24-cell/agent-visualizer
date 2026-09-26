@@ -250,6 +250,11 @@ const FEATURE_SPLIT =
 const LEADING_VERBS =
   /^(?:please\s+)?(?:build|create|make|add|implement|write|set up|setup|ship|design)?\s*(?:a|an|the|me)?\s+/i;
 
+// A go-ahead is not a feature. "Just do it: build a login page" should
+// leave "Build a login page" in the Plan.
+const LEADING_GO_AHEAD =
+  /^(?:just do it|go ahead|no need to confirm)\s*[:,-]\s*/i;
+
 function sentenceCase(text: string): string {
   const trimmed = text.trim().replace(/[.!]+$/, '');
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
@@ -257,7 +262,8 @@ function sentenceCase(text: string): string {
 
 // The first sentence of the request, as the project's one-line overview.
 export function overviewFromRequest(body: string): string {
-  const first = body.trim().split(/(?<=[.!?])\s+/)[0] ?? body.trim();
+  const text = body.trim().replace(LEADING_GO_AHEAD, '');
+  const first = text.split(/(?<=[.!?])\s+/)[0] ?? text;
   return sentenceCase(first).slice(0, 140);
 }
 
@@ -266,7 +272,7 @@ export function overviewFromRequest(body: string): string {
 export function featuresFromRequest(body: string): string[] {
   const seen = new Set<string>();
   const features: string[] = [];
-  for (const part of body.split(FEATURE_SPLIT)) {
+  for (const part of body.replace(LEADING_GO_AHEAD, '').split(FEATURE_SPLIT)) {
     const line = sentenceCase(part.replace(LEADING_VERBS, ''));
     if (line.length < 4 || line.split(/\s+/).length < 2) continue;
     const key = line.toLowerCase();
@@ -318,6 +324,11 @@ const SECTION_HINTS: Record<PlanSectionId, readonly string[]> = {
     'cache',
     'migration',
     'model',
+    'service',
+    'server',
+    'backend',
+    'session',
+    'queue',
   ],
   risks: ['risk', 'security', 'auth', 'permission', 'privacy', 'backup'],
 };

@@ -60,9 +60,10 @@ free model.
    Nothing surfaces "you said this and never placed it".
 4. **History is developer output.** `event.type` rows with sequence
    numbers. Correct, unreadable.
-5. **The coordinator's task plans are still simulator-shaped.** The Plan
-   _document_ now reads like the request; the task rows still say
-   "Define the … experience".
+5. ~~**The coordinator's task plans are still simulator-shaped.**~~ Fixed:
+   task rows are now named from the Plan document's own Features lines,
+   and a request that is all one surface gets one owner instead of an
+   invented handoff.
 6. **Claude runtime lags the open one**: no Plan/Method tools (needs
    MCP), no forwarded follow-ups, no write diffs.
 
@@ -129,8 +130,10 @@ Each with the one action that clears it: assign, restart, verify, dismiss.
 2. **Changes ledger** — one timeline, filters, click-through; History
    folded in as a raw toggle.
 3. **Loose ends** — derived list plus its actions, surfaced on the map.
-4. **Task plans that read like the request** — the coordinator names
-   tasks from the Plan document's own lines instead of its templates.
+4. ~~**Task plans that read like the request**~~ — done: the coordinator
+   names tasks from the Plan document's own Features lines, splits them
+   into visible work and the data behind it, and falls back to the
+   templates only when the Plan has no lines.
 5. **Claude runtime parity** — Plan/Method tools over MCP, forwarded
    follow-ups through streaming input, diffs on writes.
 

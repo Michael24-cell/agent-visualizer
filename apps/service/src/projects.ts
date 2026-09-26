@@ -1565,6 +1565,22 @@ export class ProjectService {
     }
   }
 
+  // The Plan document's Features, as the coordinator sees them now —
+  // read after fillPlanFromRequest so a plan is named from the request
+  // that just landed, not the one before it.
+  private planFeatures(batch: ProjectBatch): string[] {
+    const lines = [
+      ...(batch.current.planDocument.sections.features?.lines ?? []),
+    ];
+    // A second request should plan what is left, not re-propose the lines
+    // a task already carries.
+    const claimed = Object.values(batch.current.tasks)
+      .map((task) => `${task.title}\n${task.objective}`.toLowerCase())
+      .join('\n');
+    const left = lines.filter((line) => !claimed.includes(line.toLowerCase()));
+    return left.length ? left : lines;
+  }
+
   // An element picked in a preview names a selector; the folder says
   // where that selector lives. Attaching the candidates turns "this
   // element" into files the agent can open.
@@ -1766,6 +1782,7 @@ export class ProjectService {
           body,
           current.request,
           Object.values(projection.agents),
+          this.planFeatures(batch),
         );
         const unchanged =
           JSON.stringify(revised.tasks) === JSON.stringify(current.tasks);
@@ -1825,7 +1842,7 @@ export class ProjectService {
           projectId,
           suffix,
           body,
-          planFromRequest(body),
+          planFromRequest(body, { features: this.planFeatures(batch) }),
           live?.id,
         );
         const proposalId = this.proposePlan(
@@ -1851,7 +1868,7 @@ export class ProjectService {
         const shape =
           open && live
             ? { tasks: live.tasks, whyThisMany: live.whyThisMany }
-            : planFromRequest(body);
+            : planFromRequest(body, { features: this.planFeatures(batch) });
         const request = open && live ? live.request : body;
         // A direct go-ahead on an open proposal assigns that plan; the
         // proposal itself is closed as approved so history reads right.

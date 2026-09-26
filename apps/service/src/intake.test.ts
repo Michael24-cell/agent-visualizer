@@ -359,7 +359,11 @@ describe('Method is optional and pinned per task', () => {
     ]);
 
     // A plan assigned now pins v2 on both tasks.
-    const proposed = await say(api, projectId, 'Build the export flow.');
+    const proposed = await say(
+      api,
+      projectId,
+      'Build the export flow and store the archive.',
+    );
     const proposal = Object.values(
       proposed.response.project.projection.proposals,
     ).find((p) => p.kind === 'plan' && p.state === 'open')!;

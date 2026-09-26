@@ -147,7 +147,7 @@ describe('dispersal through the coordinator', () => {
     const api = client(testConfig());
     const first = await tellCoordinator(
       api,
-      'Build a preferences form with keyboard support.',
+      'Build a preferences form with keyboard support and save it to the database.',
     );
     const v1 = openPlanProposal(first.project)!;
     expect(first.project.summary).toMatchObject({
@@ -161,7 +161,7 @@ describe('dispersal through the coordinator', () => {
     expect(plan1.version).toBe(1);
     expect(plan1.tasks).toHaveLength(2);
     expect(plan1.tasks[0]).toMatchObject({
-      title: 'Define the preferences form with keyboard support experience',
+      title: 'Preferences form, keyboard support',
       agentName: 'Interface systems',
       category: 'interface',
       whySeparate: expect.any(String),
@@ -252,7 +252,7 @@ describe('dispersal through the coordinator', () => {
     const projectId = created.project.projection.projectId;
     const response = await tellCoordinator(
       api,
-      'Just do it: build a login page.',
+      'Just do it: build a login page and store the session.',
       projectId,
     );
     expect(openPlanProposal(response.project)).toBeUndefined();
@@ -331,7 +331,7 @@ describe('dispersal through the coordinator', () => {
     );
     const proposed = await tellCoordinator(
       api,
-      'Build the settings page.',
+      'Build the settings page and store the settings in the database.',
       projectId,
     );
     const proposal = openPlanProposal(proposed.project)!;
@@ -449,7 +449,7 @@ describe('independent advancement, asks, checks, and handoffs', () => {
     const api = client(config);
     const proposed = await tellCoordinator(
       api,
-      'Build the account preferences loop.',
+      'Build the account preferences loop and sync it to the database.',
     );
     await decide(api, openPlanProposal(proposed.project)!.id, 'approved');
     let project = await api.project();
@@ -565,7 +565,10 @@ describe('independent advancement, asks, checks, and handoffs', () => {
 
   it('denying an ask fails only that task; stopping with an open ask closes it', async () => {
     const api = client(testConfig());
-    const proposed = await tellCoordinator(api, 'Build the export flow.');
+    const proposed = await tellCoordinator(
+      api,
+      'Build the export flow and store the archive.',
+    );
     await decide(api, openPlanProposal(proposed.project)!.id, 'approved');
     await advance(api, 'Interface systems');
     await advance(api, 'Interface systems');

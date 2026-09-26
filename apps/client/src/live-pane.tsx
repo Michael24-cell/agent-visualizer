@@ -124,6 +124,11 @@ function ProposalCard({
               <span className="cat-dot" aria-hidden="true" />
               <span className="plan-task-index">{index + 1}</span>
               <span className="plan-task-title">{task.title}</span>
+              {task.objective.includes('\n') ? (
+                // The title holds the first lines; the objective holds them
+                // all, and approving should not hide any of them.
+                <span className="plan-task-objective">{task.objective}</span>
+              ) : null}
               <span className="plan-task-agent">
                 {task.agentName}
                 {task.dependsOn.length

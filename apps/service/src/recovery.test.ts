@@ -170,7 +170,7 @@ async function buildEverything(api: Api): Promise<string> {
     (p) => p.kind === 'record_request' && p.state === 'open',
   )!;
   await decide(api, projectId, request.id, 'approved');
-  await say(api, projectId, 'Build the billing export.');
+  await say(api, projectId, 'Build the billing export and store the archive.');
   await say(api, projectId, 'Combine into one agent.');
   await say(api, projectId, 'Split into two agents.');
   project = await api.project(projectId);

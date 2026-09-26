@@ -2,9 +2,11 @@ import type {
   Agent,
   AgentTask,
   Check,
+  PlanSectionId,
   PlanTask,
   ProjectProjection,
 } from '@harness/contracts';
+import { sectionsForText } from './documents.js';
 
 // Deterministic planning and per-agent step scripts for Increment 2.6.
 // Pure functions: they read the projection and return intents; the service
@@ -149,12 +151,172 @@ export interface PlanShape {
   readonly whyThisMany: string;
 }
 
+export interface PlanOptions {
+  readonly single?: boolean;
+  readonly extraChecks?: boolean;
+  // The Plan document's own Features lines. When present, the plan is
+  // named from them instead of the templates below.
+  readonly features?: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// A plan named from the Plan document
+// ---------------------------------------------------------------------------
+
+// Which lane a Features line belongs to: what a person sees, or the data
+// and services behind it. Decided by the same section words the Plan
+// document uses, so a line filed under Data lands with the service owner.
+function laneOf(line: string): 'interface' | 'orchestration' {
+  const sections = sectionsForText(line);
+  const behind = sections.includes('data') || sections.includes('risks');
+  const visible = sections.includes('ui') || sections.includes('visual');
+  return behind && !visible ? 'orchestration' : 'interface';
+}
+
+// The Plan writes each line as a sentence; inside a title only the first
+// keeps its capital. A word that is all caps (API, SQL) keeps its own.
+function uncapitalize(line: string): string {
+  const [word] = line.split(/\s+/);
+  if (word && word.length > 1 && word === word.toUpperCase()) return line;
+  return line.charAt(0).toLowerCase() + line.slice(1);
+}
+
+// A title a person recognises: the lines themselves, in order, clipped to
+// a readable length rather than reworded into a template.
+function titleFrom(lines: readonly string[]): string {
+  const head = lines
+    .slice(0, 3)
+    .map((line, at) => (at === 0 ? line : uncapitalize(line)))
+    .join(', ');
+  const rest = lines.length - Math.min(lines.length, 3);
+  const suffix = rest > 0 ? ` +${rest} more` : '';
+  const room = 200 - suffix.length;
+  const clipped =
+    head.length > room ? `${head.slice(0, room - 1).trimEnd()}…` : head;
+  return `${clipped}${suffix}`;
+}
+
+function sectionsFor(lines: readonly string[]): PlanSectionId[] {
+  const found = new Set<PlanSectionId>(['features']);
+  for (const line of lines) {
+    for (const section of sectionsForText(line)) found.add(section);
+  }
+  return [...found];
+}
+
+const LANE_DETAIL = {
+  interface: {
+    agentName: INTERFACE_AGENT.name,
+    category: INTERFACE_AGENT.category,
+    whySeparate:
+      'What a person sees is reviewable on its own, before anything depends on it.',
+    whyThisAgent: 'Owns the visible work and accessible interaction.',
+    skills: ['Accessible interface craft', 'Contract-first UI'],
+    expectedOutputs: ['Interface contract'],
+    requiredChecks: ['contract-check'],
+    modelTier: 'standard' as const,
+  },
+  orchestration: {
+    agentName: BACKEND_AGENT.name,
+    category: BACKEND_AGENT.category,
+    whySeparate:
+      'Data, permissions, and check evidence need their own boundary.',
+    whyThisAgent: 'Owns the authenticated handoff and durable events.',
+    skills: ['Service contract discipline', 'SQLite event replay'],
+    expectedOutputs: ['Authenticated endpoint', 'Diff summary'],
+    requiredChecks: ['experience-check'],
+    modelTier: 'deep' as const,
+  },
+};
+
+function taskForLane(
+  lane: 'interface' | 'orchestration',
+  lines: readonly string[],
+  dependsOn: readonly number[],
+): PlanTask {
+  const detail = LANE_DETAIL[lane];
+  return {
+    title: titleFrom(lines),
+    objective:
+      lines.length === 1
+        ? `From the Plan's Features: ${lines[0]}`
+        : `From the Plan's Features:\n${lines.map((line) => `- ${line}`).join('\n')}`,
+    agentName: detail.agentName,
+    category: detail.category,
+    whySeparate: detail.whySeparate,
+    whyThisAgent: detail.whyThisAgent,
+    skills: [...detail.skills],
+    scope: [],
+    dependsOn: [...dependsOn],
+    expectedOutputs: [...detail.expectedOutputs],
+    requiredChecks: [...detail.requiredChecks],
+    modelTier: detail.modelTier,
+    sections: sectionsFor(lines),
+  };
+}
+
+// The plan the Plan document already describes. One task per lane, each
+// titled with the Features lines it delivers, so approving the plan means
+// approving words the person wrote.
+export function planFromPlanFeatures(
+  features: readonly string[],
+  options: { readonly single?: boolean; readonly extraChecks?: boolean } = {},
+): PlanShape | undefined {
+  const lines = features.map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return undefined;
+  const lanes = {
+    interface: lines.filter((line) => laneOf(line) === 'interface'),
+    orchestration: lines.filter((line) => laneOf(line) === 'orchestration'),
+  };
+  if (
+    options.single ||
+    !lanes.interface.length ||
+    !lanes.orchestration.length
+  ) {
+    const lane = lanes.interface.length ? 'interface' : 'orchestration';
+    const task = taskForLane(lane, lines, []);
+    return {
+      tasks: [
+        {
+          ...task,
+          requiredChecks: options.single
+            ? ['contract-check', 'experience-check']
+            : options.extraChecks
+              ? [...task.requiredChecks, 'experience-check']
+              : task.requiredChecks,
+          modelTier: options.single ? 'deep' : task.modelTier,
+        },
+      ],
+      whyThisMany:
+        lines.length === 1
+          ? 'One Features line, one owner.'
+          : `One owner for all ${lines.length} Features lines: no handoff to follow.`,
+    };
+  }
+  const interfaceTask = taskForLane('interface', lanes.interface, []);
+  if (options.extraChecks) {
+    interfaceTask.requiredChecks = [
+      ...interfaceTask.requiredChecks,
+      'experience-check',
+    ];
+  }
+  return {
+    tasks: [
+      interfaceTask,
+      taskForLane('orchestration', lanes.orchestration, [0]),
+    ],
+    whyThisMany: `Two owners, split the way the Plan reads: ${lanes.interface.length} visible ${lanes.interface.length === 1 ? 'line' : 'lines'} first, then the ${lanes.orchestration.length} behind ${lanes.orchestration.length === 1 ? 'it' : 'them'}.`,
+  };
+}
+
 // Two boundaries by default: the visible contract, then the service that
 // consumes it. Rationale is data so the plan view can explain itself.
 export function planFromRequest(
   body: string,
-  options: { readonly single?: boolean; readonly extraChecks?: boolean } = {},
+  options: PlanOptions = {},
 ): PlanShape {
+  const named = planFromPlanFeatures(options.features ?? [], options);
+  if (named) return named;
   const subject = subjectOf(body);
   const interfaceTask: PlanTask = {
     title: `Define the ${subject} experience`,
@@ -234,13 +396,14 @@ export function revisePlan(
   body: string,
   originalRequest: string,
   agents: readonly Agent[],
+  features: readonly string[] = [],
 ): PlanShape {
   const lower = body.toLowerCase();
   if (has(lower, ['combine', 'merge', 'one agent', 'single agent'])) {
-    return planFromRequest(originalRequest, { single: true });
+    return planFromRequest(originalRequest, { single: true, features });
   }
   if (has(lower, ['split', 'two agents', 'separate'])) {
-    return planFromRequest(originalRequest);
+    return planFromRequest(originalRequest, { features });
   }
   if (has(lower, ['add a check', 'add checks'])) {
     return {
