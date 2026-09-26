@@ -315,6 +315,27 @@ export const MessageBodySchema = z
   .min(1)
   .max(MESSAGE_BODY_MAX_LENGTH);
 
+// What a message points at: a Plan or Method line, a range of a file, an
+// element in a preview, or an earlier message. Carried beside the words
+// so the log shows what you meant and agents receive it as context.
+export const MessageContextSchema = z.strictObject({
+  kind: z.enum(['plan', 'method', 'file', 'element', 'message']),
+  // How the chip reads: "Plan · Features" or "src/app.ts:12-18".
+  label: z.string().min(1).max(120),
+  // The text itself, capped; what the agent is shown.
+  detail: z.string().min(1).max(4_000).optional(),
+  sectionId: z.string().min(1).max(60).optional(),
+  // Which line of that section, when one line was pointed at.
+  line: z.number().int().nonnegative().optional(),
+  path: z.string().min(1).max(1_000).optional(),
+  from: z.number().int().positive().optional(),
+  to: z.number().int().positive().optional(),
+  selector: z.string().min(1).max(300).optional(),
+  messageId: MessageIdSchema.optional(),
+});
+
+export const MESSAGE_CONTEXT_MAX = 6;
+
 export const MessageSchema = z.strictObject({
   id: MessageIdSchema,
   projectId: ProjectIdSchema,
@@ -322,6 +343,8 @@ export const MessageSchema = z.strictObject({
   author: MessageAuthorSchema,
   intent: MessageIntentSchema,
   body: MessageBodySchema,
+  // What the message pointed at, in the order it was attached.
+  context: z.array(MessageContextSchema).max(MESSAGE_CONTEXT_MAX).optional(),
   refs: z
     .strictObject({
       taskId: TaskIdSchema.optional(),
@@ -686,6 +709,19 @@ export type BriefFieldState = z.infer<typeof BriefFieldStateSchema>;
 export type BriefRequest = z.infer<typeof BriefRequestSchema>;
 export type ModelTier = z.infer<typeof ModelTierSchema>;
 export type Activity = z.infer<typeof ActivitySchema>;
+export type MessageContext = z.infer<typeof MessageContextSchema>;
+
+// The context block an agent is shown before the user's words.
+export function renderMessageContext(
+  context: readonly MessageContext[] | undefined,
+): string {
+  if (!context?.length) return '';
+  return context
+    .map((item) =>
+      item.detail ? `${item.label}:\n${item.detail}` : `${item.label}`,
+    )
+    .join('\n\n');
+}
 export type TrustPolicy = z.infer<typeof TrustPolicySchema>;
 export type ToolPolicy = z.infer<typeof ToolPolicySchema>;
 

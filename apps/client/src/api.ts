@@ -8,6 +8,7 @@ import {
   ProjectResponseSchema,
   type AgentModel,
   type BriefFieldId,
+  type MessageContext,
   type PlanSectionId,
   type ProjectFile,
   ProjectFileSchema,
@@ -140,6 +141,7 @@ export async function postMessage(
     expectedSequence: number;
     body: string;
     intent: 'chat' | 'start_work';
+    context?: readonly MessageContext[];
     commandId?: string;
   },
 ): Promise<CommandResponse> {
@@ -154,6 +156,7 @@ export async function postMessage(
             expectedSequence: input.expectedSequence,
             body: input.body,
             intent: input.intent,
+            ...(input.context?.length ? { context: input.context } : {}),
           }),
         },
       )

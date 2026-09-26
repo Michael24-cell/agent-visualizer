@@ -14,7 +14,9 @@ import {
 import {
   AgentModelSchema,
   BriefFieldIdSchema,
+  MESSAGE_CONTEXT_MAX,
   MessageBodySchema,
+  MessageContextSchema,
   MessageSchema,
   MethodSectionIdSchema,
   PlanSectionIdSchema,
@@ -103,6 +105,8 @@ export const PostMessageCommandSchema = z.strictObject({
   ...CommandBaseShape,
   body: MessageBodySchema,
   intent: z.enum(['chat', 'start_work']).default('chat'),
+  // What the message points at: lines, file ranges, elements.
+  context: z.array(MessageContextSchema).max(MESSAGE_CONTEXT_MAX).optional(),
 });
 
 // Targets an agent; expectedSequence is that agent's lastSequence.

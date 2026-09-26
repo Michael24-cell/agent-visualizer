@@ -5985,3 +5985,92 @@ button:disabled {
   color: var(--text);
   background-color: rgba(255, 255, 255, 0.05);
 }
+
+/* What the next message points at. */
+.context-chips {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.context-chip {
+  height: 24px;
+  padding: 0 4px 0 9px;
+  gap: 4px;
+  font-size: 12px;
+  border-color: rgba(var(--silver-rgb), 0.4);
+  background: rgba(var(--silver-rgb), 0.08);
+  color: var(--text);
+  cursor: default;
+}
+.context-chip-label {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-chip button {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.context-chip button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+/* The same, recorded under a sent message. */
+.msg-context {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.msg-context li {
+  padding: 1px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-quote {
+  justify-self: start;
+  padding: 1px 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.msg-reply:hover .msg-quote,
+.msg-quote:focus-visible {
+  opacity: 1;
+}
+.msg-quote:hover {
+  color: var(--text);
+  border-color: rgba(var(--silver-rgb), 0.45);
+}
+@media (hover: none) {
+  .msg-quote {
+    opacity: 0.7;
+  }
+}

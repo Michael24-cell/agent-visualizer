@@ -22,6 +22,7 @@ import {
   agentModel,
   modelForTier,
   projectTrust,
+  renderMessageContext,
   type AdapterProvenanceSchema,
   type Agent,
   type AgentId,
@@ -36,6 +37,7 @@ import {
   type CreateAgentCommand,
   type CreateProjectCommand,
   type MessageAuthor,
+  type MessageContext,
   type MessageIntent,
   type MessagesQuery,
   type MethodOverrideCommand,
@@ -221,6 +223,7 @@ class ProjectBatch {
       askId?: string;
       fromThreadId?: string;
     },
+    context?: readonly MessageContext[],
   ) {
     this.messageCount += 1;
     const id = MessageIdSchema.parse(
@@ -238,6 +241,7 @@ class ProjectBatch {
           author,
           intent,
           body,
+          ...(context?.length ? { context } : {}),
           ...(refs ? { refs } : {}),
           postedAt: this.now,
           sequence: this.nextSequence(),
@@ -1222,6 +1226,8 @@ export class ProjectService {
         userAuthor,
         command.body,
         command.intent,
+        undefined,
+        command.context,
       );
       // Simulated replies are deferred so panes show typing; a live agent
       // thread has nothing to type — its message is a task or a forward,
@@ -1416,7 +1422,13 @@ export class ProjectService {
         // A follow-up for a running task goes to the agent itself; the
         // model answers in its own words on its next turn.
         const run = this.liveRuns.get(currentTask.id)?.run;
-        if (run?.send?.(command.body)) return;
+        const forwarded = renderMessageContext(command.context);
+        if (
+          run?.send?.(
+            forwarded ? `${forwarded}\n\n${command.body}` : command.body,
+          )
+        )
+          return;
         batch.post(
           thread,
           systemAuthor,
@@ -1444,6 +1456,7 @@ export class ProjectService {
       );
     }
     const taskId = TaskIdSchema.parse(`task_${safe(command.commandId)}`);
+    const context = renderMessageContext(command.context);
     batch.emit(
       'task.assigned',
       {
@@ -1452,7 +1465,7 @@ export class ProjectService {
           projectId,
           agentId: agent.id,
           title: command.body.split('\n')[0]!.slice(0, 200),
-          objective: command.body,
+          objective: context ? `${context}\n\n${command.body}` : command.body,
           category: agent.category,
           skills: [],
           scope: [],

@@ -16,6 +16,7 @@ import {
   type Ask,
   type Check,
   type Message,
+  type MessageContext,
   type Output,
   type ProjectResponse,
   type Proposal,
@@ -594,6 +595,8 @@ export function LivePane({
   onProject,
   onClose,
   onOpenArtifact,
+  context = [],
+  onContext,
 }: {
   project: ProjectResponse;
   target: LiveTarget;
@@ -601,6 +604,10 @@ export function LivePane({
   onProject: (next: ProjectResponse) => void;
   onClose: () => void;
   onOpenArtifact?: (path: string) => void;
+  // What the next message points at, held by the workspace so documents
+  // and artifacts can attach to the pane you are typing in.
+  context?: readonly MessageContext[];
+  onContext?: (next: readonly MessageContext[]) => void;
 }) {
   const projectId = project.projection.projectId;
   const threadRef = liveTargetId(target);
@@ -796,15 +803,17 @@ export function LivePane({
       );
       return;
     }
+    const attached = context;
     void run(
       () =>
         postMessage(projectId, threadRef, {
           expectedSequence: target.thread.lastSequence,
           body: parsed.body,
           intent,
+          ...(attached.length ? { context: attached } : {}),
         }),
       intent === 'start_work' ? 'Work started.' : 'Sent.',
-    );
+    ).then(() => onContext?.([]));
   };
 
   const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1055,6 +1064,38 @@ export function LivePane({
                     handed to {title} · {forwardedTo}
                   </span>
                 ) : null}
+                {onContext && !mine && message.body.length > 1 ? (
+                  <button
+                    type="button"
+                    className="msg-quote"
+                    title="Point your next message at this"
+                    onClick={() =>
+                      onContext([
+                        ...context,
+                        {
+                          kind: 'message',
+                          label: `${label ?? title} · message`,
+                          detail: message.body.slice(0, 4_000),
+                          messageId: message.id,
+                        },
+                      ])
+                    }
+                  >
+                    Quote
+                  </button>
+                ) : null}
+                {message.context?.length ? (
+                  <ul className="msg-context">
+                    {message.context.map((item, index) => (
+                      <li
+                        key={`${item.label}-${index}`}
+                        title={item.detail ?? item.label}
+                      >
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {mine || message.author.role === 'system' ? (
                   <p>{message.body}</p>
                 ) : (
@@ -1128,6 +1169,32 @@ export function LivePane({
       >
         <span className="composer-rail" aria-hidden="true" />
         <div className="composer-field">
+          {context.length ? (
+            <ul className="context-chips" aria-label="Attached to this message">
+              {context.map((item, index) => (
+                <li
+                  key={`${item.label}-${index}`}
+                  className={`chip context-chip kind-${item.kind}`}
+                >
+                  <span
+                    className="context-chip-label"
+                    title={item.detail ?? item.label}
+                  >
+                    {item.label}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.label}`}
+                    onClick={() =>
+                      onContext?.(context.filter((_, at) => at !== index))
+                    }
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <textarea
             ref={inputRef}
             rows={1}

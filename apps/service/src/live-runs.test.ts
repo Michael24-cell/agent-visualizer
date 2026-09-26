@@ -711,4 +711,98 @@ describe('live runs', () => {
     expect(task.state).toBe('done');
     expect(task.startedAt).toBeDefined();
   });
+
+  it('carries pointed-at context onto the message, the task objective, and forwards', async () => {
+    const prompts: string[] = [];
+    const forwarded: string[] = [];
+    let finish: () => void = () => {};
+    const root = mkdtempSync(join(tmpdir(), 'visual-agent-live-'));
+    temporaryDirectories.push(root);
+    mkdirSync(join(root, 'repo'));
+    const database = openHarnessDatabase(join(root, 'test.db'));
+    const store = new SqliteProjectStore(database.database);
+    const service = new ProjectService(store, {
+      folders: { root },
+      runtime: { mode: 'live' },
+      runner: (input, sink) => {
+        prompts.push(input.prompt);
+        return {
+          done: new Promise<void>((resolve) => {
+            finish = () => {
+              sink.emit([{ kind: 'finish', reason: 'Done.' }]);
+              resolve();
+            };
+          }),
+          stop: () => undefined,
+          send: (body) => {
+            forwarded.push(body);
+            return true;
+          },
+        };
+      },
+    });
+    const ids = createProject(service, root);
+    const thread = service.getProject(ids.projectId as never).projection
+      .threads[ids.threadId]!;
+    const started = service.postMessage(
+      ids.projectId as never,
+      ids.threadId,
+      PostMessageCommandSchema.parse({
+        commandId: commandId(),
+        expectedSequence: thread.lastSequence,
+        body: 'make this concrete',
+        intent: 'start_work',
+        context: [
+          {
+            kind: 'plan',
+            label: 'Plan · Features',
+            detail: 'Offline sync',
+            sectionId: 'features',
+            line: 1,
+          },
+        ],
+      }),
+    );
+    const message = service
+      .listMessages(ids.projectId as never, ids.threadId, { limit: 5 })
+      .messages.at(-1)!;
+    expect(message.body).toBe('make this concrete');
+    expect(message.context).toEqual([
+      {
+        kind: 'plan',
+        label: 'Plan · Features',
+        detail: 'Offline sync',
+        sectionId: 'features',
+        line: 1,
+      },
+    ]);
+    // The agent is shown the context above the words.
+    expect(prompts[0]).toContain('Plan · Features:\nOffline sync');
+    expect(prompts[0]).toContain('make this concrete');
+    const task =
+      started.project.projection.tasks[started.receipt.createdIds.tasks![0]!]!;
+    expect(task.title).toBe('make this concrete');
+
+    // A follow-up carries its own context into the running task.
+    const moved = service.getProject(ids.projectId as never).projection.threads[
+      ids.threadId
+    ]!;
+    service.postMessage(
+      ids.projectId as never,
+      ids.threadId,
+      PostMessageCommandSchema.parse({
+        commandId: commandId(),
+        expectedSequence: moved.lastSequence,
+        body: 'this bit too',
+        context: [
+          { kind: 'file', label: 'src/app.ts:3-4', detail: 'const a = 1;' },
+        ],
+      }),
+    );
+    expect(forwarded).toEqual([
+      'src/app.ts:3-4:\nconst a = 1;\n\nthis bit too',
+    ]);
+    finish();
+    await service.whenIdle();
+  });
 });

@@ -11,6 +11,7 @@ import {
   TRUST_POLICIES,
   TrustPolicySchema,
   projectTrust,
+  type MessageContext,
 } from '@harness/contracts';
 import { FolderPicker } from './folder-picker';
 import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
@@ -67,6 +68,11 @@ export function Workspace({
   );
   const [detail, setDetail] = useState<DetailItem>();
   const [artifact, setArtifact] = useState<string>();
+  // What each conversation's next message points at. Documents and
+  // artifacts attach here; the pane shows the chips and sends them.
+  const [contexts, setContexts] = useState<
+    Record<string, readonly MessageContext[]>
+  >({});
   const openArtifact = (path: string) => {
     setArtifact(path);
     setDetail('artifacts');
@@ -407,6 +413,13 @@ export function Workspace({
               onProject={updateProject}
               onClose={() => close(liveTargetId(target))}
               onOpenArtifact={openArtifact}
+              context={contexts[liveTargetId(target)] ?? []}
+              onContext={(next) =>
+                setContexts((current) => ({
+                  ...current,
+                  [liveTargetId(target)]: next,
+                }))
+              }
             />
           </div>
         ))}
