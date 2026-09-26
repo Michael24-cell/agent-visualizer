@@ -717,9 +717,13 @@ export function renderMessageContext(
 ): string {
   if (!context?.length) return '';
   return context
-    .map((item) =>
-      item.detail ? `${item.label}:\n${item.detail}` : `${item.label}`,
-    )
+    .map((item) => {
+      const head =
+        item.kind === 'element'
+          ? `Element picked in a preview — ${item.label}. Find where it is defined and change it there.`
+          : `${item.label}:`;
+      return item.detail ? `${head}\n${item.detail}` : head;
+    })
     .join('\n\n');
 }
 export type TrustPolicy = z.infer<typeof TrustPolicySchema>;

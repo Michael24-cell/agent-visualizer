@@ -107,6 +107,10 @@ import { extname } from 'node:path';
 import { insideFolder } from '@harness/runtime-openai';
 import type { z } from 'zod';
 import { renderBrief } from './brief.js';
+import {
+  describeSelectorSources,
+  findSelectorSources,
+} from './element-search.js';
 import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
 
 export class ProjectCommandError extends Error {
@@ -1252,14 +1256,16 @@ export class ProjectService {
         this.now(),
         projection,
       );
+      const context = this.groundContext(projection, command.context);
       const messageId = batch.post(
         thread,
         userAuthor,
         command.body,
         command.intent,
         undefined,
-        command.context,
+        context,
       );
+      const grounded = { ...command, context };
       // Simulated replies are deferred so panes show typing; a live agent
       // thread has nothing to type — its message is a task or a forward,
       // and both must happen now, before the run moves on.
@@ -1267,13 +1273,13 @@ export class ProjectService {
         this.replies.mode === 'inline' ||
         (this.isLive && thread.kind === 'agent');
       if (inline) {
-        this.buildReply(batch, projectId, thread, command, messageId);
+        this.buildReply(batch, projectId, thread, grounded, messageId);
         const committed = batch.commit();
         if (this.isLive) this.reconcileLiveRuns(projectId);
         return committed;
       }
       const committed = batch.commit();
-      this.scheduleReply(projectId, thread, command, messageId);
+      this.scheduleReply(projectId, thread, grounded, messageId);
       return committed;
     });
   }
@@ -1557,6 +1563,31 @@ export class ProjectService {
         meta,
       );
     }
+  }
+
+  // An element picked in a preview names a selector; the folder says
+  // where that selector lives. Attaching the candidates turns "this
+  // element" into files the agent can open.
+  private groundContext(
+    projection: ProjectProjection,
+    context: readonly MessageContext[] | undefined,
+  ): MessageContext[] | undefined {
+    const root = projection.project.repository?.path;
+    if (!context?.length || !root) return context ? [...context] : undefined;
+    return context.map((item) => {
+      if (item.kind !== 'element' || !item.selector) return item;
+      let hint: string;
+      try {
+        hint = describeSelectorSources(
+          findSelectorSources(root, item.selector),
+        );
+      } catch {
+        hint = '';
+      }
+      if (!hint) return item;
+      const detail = `${item.detail ? `${item.detail}\n\n` : ''}${hint}`;
+      return { ...item, detail: detail.slice(0, 4_000) };
+    });
   }
 
   // A conversational edit to the Plan or Method document, applied at once
