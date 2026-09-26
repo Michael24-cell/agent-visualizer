@@ -30,13 +30,22 @@ const SCRIPT = `
         parts.unshift(tag);
         break;
       }
+      // Classes first: they are what stylesheets are written against.
+      const classes = (node.getAttribute('class') || '')
+        .split(' ')
+        .filter((name) => name && name !== 'harness-pick-outline')
+        .slice(0, 2)
+        .map((name) => '.' + name)
+        .join('');
       const siblings = [...parent.children].filter(
         (child) => child.tagName === node.tagName,
       );
       parts.unshift(
-        siblings.length > 1
-          ? tag + ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')'
-          : tag,
+        classes
+          ? tag + classes
+          : siblings.length > 1
+            ? tag + ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')'
+            : tag,
       );
       node = parent;
     }
