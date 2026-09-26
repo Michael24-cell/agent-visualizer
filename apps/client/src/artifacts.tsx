@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   MessageContext,
   ProjectFile,
@@ -10,6 +10,7 @@ import {
   revealProjectFile,
   writeProjectFile,
 } from './api';
+import { readPickedElement, withPicker } from './element-picker';
 import { Markdown } from './markdown';
 import { artifactPaths } from './project-notes';
 
@@ -31,6 +32,7 @@ export function ArtifactsView({
   const paths = artifactPaths(project);
   const projectId = project.projection.projectId;
   const [actionNote, setActionNote] = useState<string>();
+  const [openPath, setOpenPath] = useState('');
   const act = async (mode: 'reveal' | 'open') => {
     if (!selected) return;
     try {
@@ -72,19 +74,55 @@ export function ArtifactsView({
     };
   }, [projectId, selected, lastSequence, tick]);
 
+  const opener = (
+    <form
+      className="artifact-open"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const path = openPath.trim();
+        if (!path) return;
+        onSelect(path);
+        setOpenPath('');
+      }}
+    >
+      <input
+        value={openPath}
+        placeholder="Open any file in the folder…"
+        aria-label="Open a file by path"
+        spellCheck={false}
+        onChange={(event) => setOpenPath(event.target.value)}
+      />
+    </form>
+  );
+
   if (!paths.length && !selected) {
     return (
-      <p className="detail-lead">
-        Nothing written yet. Files agents create or change appear here, and a{' '}
-        <strong>Write</strong> or <strong>Read</strong> row in a conversation
-        opens them.
-      </p>
+      <>
+        <p className="detail-lead">
+          Nothing written yet. Files agents create or change appear here, and a{' '}
+          <strong>Write</strong> or <strong>Read</strong> row in a conversation
+          opens them.
+        </p>
+        {opener}
+      </>
     );
   }
 
   return (
     <div className="artifacts">
+      {opener}
       <ul className="artifact-list" aria-label="Files agents wrote">
+        {selected && !paths.includes(selected) ? (
+          <li key={selected}>
+            <button
+              type="button"
+              aria-pressed
+              onClick={() => onSelect(undefined)}
+            >
+              {selected}
+            </button>
+          </li>
+        ) : null}
         {paths.map((path) => (
           <li key={path}>
             <button
@@ -172,14 +210,37 @@ function ArtifactBody({
   onError: (message: string) => void;
 }) {
   const [raw, setRaw] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [draft, setDraft] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   // What you selected inside the file, so you can ask about just that.
   const [selection, setSelection] = useState<{
     text: string;
     from: number;
     to: number;
   }>();
+
+  // The preview only runs scripts while you are picking, and never with
+  // same-origin access; what it sends back is text, not instructions.
+  useEffect(() => {
+    if (!picking || !onAsk) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frameRef.current?.contentWindow) return;
+      const picked = readPickedElement(event.data);
+      if (!picked) return;
+      onAsk({
+        kind: 'element',
+        label: `${file.path} · ${picked.selector}`,
+        detail: picked.html || picked.text,
+        path: file.path,
+        selector: picked.selector,
+      });
+      setPicking(false);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [picking, onAsk, file.path]);
 
   if (file.kind === 'binary') {
     return <p className="field-value muted">Binary file; nothing to show.</p>;
@@ -274,6 +335,17 @@ function ArtifactBody({
           {raw ? 'Rendered' : 'Source'}
         </button>
       ) : null}
+      {file.kind === 'html' && !raw && onAsk ? (
+        <button
+          type="button"
+          className={`quiet-button ${picking ? 'is-on' : ''}`}
+          aria-pressed={picking}
+          title="Click an element in the preview to point at it"
+          onClick={() => setPicking((value) => !value)}
+        >
+          {picking ? 'Picking… (Esc)' : 'Pick element'}
+        </button>
+      ) : null}
       <button
         type="button"
         className="quiet-button"
@@ -316,10 +388,12 @@ function ArtifactBody({
       </div>
     ) : file.kind === 'html' && !raw ? (
       <iframe
-        className="artifact-frame"
+        key={picking ? 'picking' : 'plain'}
+        ref={frameRef}
+        className={`artifact-frame ${picking ? 'is-picking' : ''}`}
         title={file.path}
-        sandbox=""
-        srcDoc={file.content}
+        sandbox={picking ? 'allow-scripts' : ''}
+        srcDoc={picking ? withPicker(file.content) : file.content}
       />
     ) : (
       <pre className="artifact-code">
