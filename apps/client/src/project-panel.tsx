@@ -869,6 +869,7 @@ export function ProjectDetail({
             project={props.project}
             selected={artifact}
             onSelect={onSelectArtifact ?? (() => undefined)}
+            onAsk={onAsk}
           />
         ) : null}
         {item === 'history' ? <HistoryView {...props} /> : null}

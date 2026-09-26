@@ -6140,3 +6140,30 @@ button:disabled {
   font: inherit;
   font-size: 13px;
 }
+
+/* Editing an artifact by hand, and asking about a selection. */
+.artifact-body-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.artifact-edit {
+  display: grid;
+  gap: 8px;
+}
+.artifact-editor {
+  width: 100%;
+  min-height: 320px;
+  max-height: 70vh;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--silver-rgb), 0.35);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  tab-size: 2;
+}

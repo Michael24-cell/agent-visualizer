@@ -472,6 +472,26 @@ export async function listRuntimeModels(): Promise<string[]> {
   return body.models ?? [];
 }
 
+export async function writeProjectFile(
+  projectId: string,
+  path: string,
+  content: string,
+  expectedModifiedAt?: string,
+): Promise<ProjectFile> {
+  return ProjectFileSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/files`, {
+        method: 'POST',
+        body: JSON.stringify({
+          path,
+          content,
+          ...(expectedModifiedAt ? { expectedModifiedAt } : {}),
+        }),
+      })
+    ).json(),
+  );
+}
+
 export function projectFileUrl(projectId: string, path: string): string {
   return `/api/projects/${projectId}/files/raw?path=${encodeURIComponent(path)}`;
 }

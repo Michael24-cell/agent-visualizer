@@ -202,6 +202,31 @@ export function registerProjectRoutes(
     return ProjectFileSchema.parse(result.value);
   });
 
+  // Saving a file you edited in the artifacts viewer.
+  service.post('/api/projects/:projectId/files', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    const body = z
+      .strictObject({
+        path: z.string().min(1).max(1_000),
+        content: z.string().max(2_000_000),
+        expectedModifiedAt: z.iso.datetime().optional(),
+      })
+      .safeParse(request.body);
+    if (!params.success || !body.success) {
+      return reply.code(400).send(invalid('file contents'));
+    }
+    const result = handle(() =>
+      projects.writeProjectFile(
+        params.data.projectId,
+        body.data.path,
+        body.data.content,
+        body.data.expectedModifiedAt,
+      ),
+    );
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return ProjectFileSchema.parse(result.value);
+  });
+
   // The file's bytes, for images (and anything else the viewer embeds).
   service.get('/api/projects/:projectId/files/raw', async (request, reply) => {
     const params = ProjectParams.safeParse(request.params);

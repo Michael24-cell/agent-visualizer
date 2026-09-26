@@ -102,7 +102,7 @@ import {
   type LiveTaskSink,
 } from '@harness/runtime-claude';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { insideFolder } from '@harness/runtime-openai';
 import type { z } from 'zod';
@@ -424,6 +424,37 @@ export class ProjectService {
         `${path} is outside the attached folder.`,
       );
     }
+  }
+
+  // Saves a file you edited in the viewer. Refuses when the file moved
+  // under you (an agent wrote it after you opened it).
+  writeProjectFile(
+    projectId: ProjectId,
+    path: string,
+    content: string,
+    expectedModifiedAt?: string,
+  ): ProjectFile {
+    const resolved = this.resolveProjectFile(projectId, path);
+    let current;
+    try {
+      current = statSync(resolved);
+    } catch {
+      throw new ProjectCommandError('not_found', `${path} was not found.`);
+    }
+    if (!current.isFile()) {
+      throw new ProjectCommandError('not_found', `${path} is not a file.`);
+    }
+    if (
+      expectedModifiedAt &&
+      current.mtime.toISOString() !== expectedModifiedAt
+    ) {
+      throw new ProjectCommandError(
+        'stale_sequence',
+        `${path} changed since you opened it; reopen it and edit again.`,
+      );
+    }
+    writeFileSync(resolved, content);
+    return this.readProjectFile(projectId, path);
   }
 
   // A file from the attached folder, for viewing what agents wrote.

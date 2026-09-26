@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -290,5 +296,73 @@ describe('attaching a repository to a project', () => {
         )
       ).statusCode,
     ).toBe(409);
+  });
+
+  it('saves a file you edited, and refuses when it changed underneath', async () => {
+    const root = fakeHome();
+    writeFileSync(join(root, 'wevolv', 'NOTES.md'), '# Notes\n');
+    const service = createService(config(root));
+    const headers = {
+      origin: 'http://127.0.0.1:5173',
+      'x-harness-session': 'a'.repeat(64),
+    };
+    const created = CommandResponseSchema.parse(
+      (
+        await service.inject({
+          method: 'POST',
+          url: '/api/projects',
+          headers,
+          payload: {
+            commandId: commandId(),
+            name: 'Editing',
+            repositoryPath: join(root, 'wevolv'),
+          },
+        })
+      ).json(),
+    );
+    const projectId = created.project.projection.projectId;
+    const opened = (
+      await service.inject({
+        method: 'GET',
+        url: `/api/projects/${projectId}/files?path=NOTES.md`,
+        headers,
+      })
+    ).json() as { modifiedAt: string };
+
+    const saved = await service.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/files`,
+      headers,
+      payload: {
+        path: 'NOTES.md',
+        content: '# Notes\n\nEdited by hand.\n',
+        expectedModifiedAt: opened.modifiedAt,
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ kind: 'markdown' });
+    expect(readFileSync(join(root, 'wevolv', 'NOTES.md'), 'utf8')).toBe(
+      '# Notes\n\nEdited by hand.\n',
+    );
+
+    // The stale timestamp is refused; outside the folder is refused.
+    const stale = await service.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/files`,
+      headers,
+      payload: {
+        path: 'NOTES.md',
+        content: 'nope',
+        expectedModifiedAt: opened.modifiedAt,
+      },
+    });
+    expect(stale.statusCode).toBe(409);
+    const outside = await service.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/files`,
+      headers,
+      payload: { path: '../day-01/README.md', content: 'nope' },
+    });
+    expect(outside.statusCode).toBe(403);
   });
 });

@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { ProjectFile, ProjectResponse } from '@harness/contracts';
-import { projectFileUrl, readProjectFile, revealProjectFile } from './api';
+import type {
+  MessageContext,
+  ProjectFile,
+  ProjectResponse,
+} from '@harness/contracts';
+import {
+  projectFileUrl,
+  readProjectFile,
+  revealProjectFile,
+  writeProjectFile,
+} from './api';
 import { Markdown } from './markdown';
 import { artifactPaths } from './project-notes';
 
@@ -12,10 +21,12 @@ export function ArtifactsView({
   project,
   selected,
   onSelect,
+  onAsk,
 }: {
   project: ProjectResponse;
   selected: string | undefined;
   onSelect: (path: string | undefined) => void;
+  onAsk?: ((context: MessageContext) => void) | undefined;
 }) {
   const paths = artifactPaths(project);
   const projectId = project.projection.projectId;
@@ -130,7 +141,16 @@ export function ArtifactsView({
           {actionNote ? <p className="doc-hint">{actionNote}</p> : null}
           {error ? <p className="field-value muted">{error}</p> : null}
           {file && file.path === selected ? (
-            <ArtifactBody file={file} projectId={projectId} />
+            <ArtifactBody
+              file={file}
+              projectId={projectId}
+              onAsk={onAsk}
+              onSaved={(next) => {
+                setFile(next);
+                setActionNote('Saved.');
+              }}
+              onError={(message) => setActionNote(message)}
+            />
           ) : null}
         </section>
       ) : null}
@@ -141,11 +161,26 @@ export function ArtifactsView({
 function ArtifactBody({
   file,
   projectId,
+  onAsk,
+  onSaved,
+  onError,
 }: {
   file: ProjectFile;
   projectId: string;
+  onAsk?: ((context: MessageContext) => void) | undefined;
+  onSaved: (next: ProjectFile) => void;
+  onError: (message: string) => void;
 }) {
   const [raw, setRaw] = useState(false);
+  const [draft, setDraft] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  // What you selected inside the file, so you can ask about just that.
+  const [selection, setSelection] = useState<{
+    text: string;
+    from: number;
+    to: number;
+  }>();
+
   if (file.kind === 'binary') {
     return <p className="field-value muted">Binary file; nothing to show.</p>;
   }
@@ -158,45 +193,146 @@ function ArtifactBody({
       />
     );
   }
-  const toggle =
-    file.kind === 'markdown' || file.kind === 'html' ? (
+
+  const save = async () => {
+    if (draft === undefined) return;
+    setSaving(true);
+    try {
+      onSaved(
+        await writeProjectFile(projectId, file.path, draft, file.modifiedAt),
+      );
+      setDraft(undefined);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'It was not saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (draft !== undefined) {
+    return (
+      <div className="artifact-edit">
+        <textarea
+          className="artifact-editor"
+          autoFocus
+          value={draft}
+          aria-label={`Contents of ${file.path}`}
+          spellCheck={false}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setDraft(undefined);
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void save();
+            }
+          }}
+        />
+        <div className="doc-editor-actions">
+          <span className="doc-hint">⌘⏎ saves · Esc cancels</span>
+          <button
+            type="button"
+            className="secondary-action small"
+            onClick={() => setDraft(undefined)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="primary-action small"
+            disabled={saving}
+            onClick={() => void save()}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // The lines a text selection covers, found in the file's own content.
+  const noteSelection = () => {
+    const text = window.getSelection()?.toString() ?? '';
+    const trimmed = text.trim();
+    if (trimmed.length < 2) {
+      setSelection(undefined);
+      return;
+    }
+    const at = file.content.indexOf(trimmed);
+    const from = at < 0 ? 1 : file.content.slice(0, at).split('\n').length;
+    const to = from + trimmed.split('\n').length - 1;
+    setSelection({ text: trimmed.slice(0, 4_000), from, to });
+  };
+
+  const actions = (
+    <div className="artifact-body-actions">
+      {file.kind === 'markdown' || file.kind === 'html' ? (
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => setRaw((value) => !value)}
+        >
+          {raw ? 'Rendered' : 'Source'}
+        </button>
+      ) : null}
       <button
         type="button"
-        className="quiet-button artifact-toggle"
-        onClick={() => setRaw((value) => !value)}
+        className="quiet-button"
+        onClick={() => setDraft(file.content)}
+        disabled={file.truncated}
+        title={
+          file.truncated ? 'Too large to edit here' : 'Edit this file yourself'
+        }
       >
-        {raw ? 'Rendered' : 'Source'}
+        Edit
       </button>
-    ) : null;
-  if (file.kind === 'markdown' && !raw) {
-    return (
-      <>
-        {toggle}
-        <div className="artifact-markdown msg-body">
-          <Markdown text={file.content} />
-        </div>
-      </>
-    );
-  }
-  if (file.kind === 'html' && !raw) {
-    return (
-      <>
-        {toggle}
-        <iframe
-          className="artifact-frame"
-          title={file.path}
-          sandbox=""
-          srcDoc={file.content}
-        />
-      </>
-    );
-  }
-  return (
-    <>
-      {toggle}
+      {onAsk && selection ? (
+        <button
+          type="button"
+          className="primary-action small"
+          onClick={() => {
+            onAsk({
+              kind: 'file',
+              label: `${file.path}:${selection.from}${
+                selection.to > selection.from ? `-${selection.to}` : ''
+              }`,
+              detail: selection.text,
+              path: file.path,
+              from: selection.from,
+              to: selection.to,
+            });
+            setSelection(undefined);
+          }}
+        >
+          Ask about selection
+        </button>
+      ) : null}
+    </div>
+  );
+
+  const body =
+    file.kind === 'markdown' && !raw ? (
+      <div className="artifact-markdown msg-body">
+        <Markdown text={file.content} />
+      </div>
+    ) : file.kind === 'html' && !raw ? (
+      <iframe
+        className="artifact-frame"
+        title={file.path}
+        sandbox=""
+        srcDoc={file.content}
+      />
+    ) : (
       <pre className="artifact-code">
         <code>{file.content}</code>
       </pre>
+    );
+
+  return (
+    <>
+      {actions}
+      <div onMouseUp={noteSelection} onKeyUp={noteSelection}>
+        {body}
+      </div>
     </>
   );
 }
