@@ -29,6 +29,7 @@ import {
   runtimeNote,
   statusLabels,
 } from './project-notes';
+import { MapView } from './map-view';
 import { ProjectDetail, type DetailItem } from './project-panel';
 
 // The project screen: conversations side by side, a thin sidebar to open
@@ -71,6 +72,8 @@ export function Workspace({
   );
   const [detail, setDetail] = useState<DetailItem>();
   const [artifact, setArtifact] = useState<string>();
+  // The panes area shows the conversations, or the shape of the work.
+  const [view, setView] = useState<'chat' | 'map'>('chat');
   // What each conversation's next message points at. Documents and
   // artifacts attach here; the pane shows the chips and sends them.
   const [contexts, setContexts] = useState<
@@ -260,6 +263,22 @@ export function Workspace({
         >
           {statusLabels[project.summary.status]}
         </span>
+        <div className="view-switch" role="group" aria-label="View">
+          <button
+            type="button"
+            aria-pressed={view === 'chat'}
+            onClick={() => setView('chat')}
+          >
+            Conversation
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'map'}
+            onClick={() => setView('map')}
+          >
+            Map
+          </button>
+        </div>
         <div className="app-actions">
           {attention ? (
             <button
@@ -453,30 +472,48 @@ export function Workspace({
         </div>
       ) : null}
 
-      <main className="panes" id="panes" data-count={openTargets.length}>
-        {openTargets.map((target, index) => (
-          <div
-            key={liveTargetId(target)}
-            className={`pane-slot ${index === activeIndex ? 'is-active' : ''}`}
-          >
-            <LivePane
-              project={project}
-              target={target}
-              canClose={openTargets.length > 1}
-              onProject={updateProject}
-              onClose={() => close(liveTargetId(target))}
-              onOpenArtifact={openArtifact}
-              onAddToPlan={addToPlan}
-              context={contexts[liveTargetId(target)] ?? []}
-              onContext={(next) =>
-                setContexts((current) => ({
-                  ...current,
-                  [liveTargetId(target)]: next,
-                }))
-              }
-            />
-          </div>
-        ))}
+      <main
+        className="panes"
+        id="panes"
+        data-count={view === 'map' ? 1 : openTargets.length}
+      >
+        {view === 'map' ? (
+          <MapView
+            project={project}
+            onOpenAgent={(agentId) => {
+              show(agentId);
+              setView('chat');
+            }}
+            onOpenArtifact={(path) => openArtifact(path)}
+            onOpenSection={() => setDetail('plan')}
+            onAsk={attachContext}
+          />
+        ) : null}
+        {view === 'chat'
+          ? openTargets.map((target, index) => (
+              <div
+                key={liveTargetId(target)}
+                className={`pane-slot ${index === activeIndex ? 'is-active' : ''}`}
+              >
+                <LivePane
+                  project={project}
+                  target={target}
+                  canClose={openTargets.length > 1}
+                  onProject={updateProject}
+                  onClose={() => close(liveTargetId(target))}
+                  onOpenArtifact={openArtifact}
+                  onAddToPlan={addToPlan}
+                  context={contexts[liveTargetId(target)] ?? []}
+                  onContext={(next) =>
+                    setContexts((current) => ({
+                      ...current,
+                      [liveTargetId(target)]: next,
+                    }))
+                  }
+                />
+              </div>
+            ))
+          : null}
       </main>
 
       {detail ? (

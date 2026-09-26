@@ -6191,3 +6191,195 @@ button:disabled {
   border-color: rgba(var(--silver-rgb), 0.45);
   outline: none;
 }
+
+/* Conversation or Map. */
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.view-switch button {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.view-switch button[aria-pressed='true'] {
+  background: rgba(var(--silver-rgb), 0.12);
+  color: var(--text);
+}
+
+/* The map: ideas, the tasks that took them, the files they produced. */
+.map {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 28px;
+  padding: 20px 24px 40px;
+  align-content: start;
+}
+.map.empty {
+  display: block;
+  padding: 32px;
+}
+.map-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.map-lines path {
+  fill: none;
+  stroke: rgba(var(--silver-rgb), 0.35);
+  stroke-width: 1.5;
+  transition: opacity 120ms ease;
+}
+.map-lines path.is-dim {
+  opacity: 0.12;
+}
+.map-column {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+.map-column h3 {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.map-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.map-node {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  transition:
+    opacity 120ms ease,
+    border-color 120ms ease;
+}
+.map-node.is-dim {
+  opacity: 0.35;
+}
+.map-node header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.map-meta,
+.map-idea li button,
+.map-more {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.map-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.map-idea.is-unclaimed {
+  border-style: dashed;
+  border-color: rgba(var(--amber-rgb), 0.5);
+}
+.map-flag {
+  color: var(--amber);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.map-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.map-idea ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.map-idea li button {
+  width: 100%;
+  padding: 1px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-idea li button:hover {
+  color: var(--text);
+}
+.map-more {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.map-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.map-task .pane-state {
+  margin-left: auto;
+  font-size: 11px;
+}
+.map-file .map-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (max-width: 900px) {
+  .map {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .map-lines {
+    display: none;
+  }
+}
