@@ -6065,6 +6065,10 @@ button:disabled {
 .msg-quote:focus-visible {
   opacity: 1;
 }
+.msg-actions {
+  display: inline-flex;
+  gap: 6px;
+}
 .msg-quote:hover {
   color: var(--text);
   border-color: rgba(var(--silver-rgb), 0.45);
@@ -6073,4 +6077,66 @@ button:disabled {
   .msg-quote {
     opacity: 0.7;
   }
+}
+
+/* One line of a document, with its actions on hover. */
+.doc-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.doc-line-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.doc-line-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.doc-line:hover .doc-line-actions,
+.doc-line-actions:focus-within {
+  opacity: 1;
+}
+@media (hover: none) {
+  .doc-line-actions {
+    opacity: 0.7;
+  }
+}
+.doc-line-actions button,
+.doc-line-actions select {
+  height: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+}
+.doc-line-actions button:hover:not(:disabled),
+.doc-line-actions select:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.doc-line-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.doc-line-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--silver-rgb), 0.45);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
 }

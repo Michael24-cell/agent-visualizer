@@ -595,6 +595,7 @@ export function LivePane({
   onProject,
   onClose,
   onOpenArtifact,
+  onAddToPlan,
   context = [],
   onContext,
 }: {
@@ -604,6 +605,8 @@ export function LivePane({
   onProject: (next: ProjectResponse) => void;
   onClose: () => void;
   onOpenArtifact?: (path: string) => void;
+  // Keeps an idea from the conversation in the Plan document.
+  onAddToPlan?: (text: string) => void;
   // What the next message points at, held by the workspace so documents
   // and artifacts can attach to the pane you are typing in.
   context?: readonly MessageContext[];
@@ -1064,25 +1067,39 @@ export function LivePane({
                     handed to {title} · {forwardedTo}
                   </span>
                 ) : null}
-                {onContext && !mine && message.body.length > 1 ? (
-                  <button
-                    type="button"
-                    className="msg-quote"
-                    title="Point your next message at this"
-                    onClick={() =>
-                      onContext([
-                        ...context,
-                        {
-                          kind: 'message',
-                          label: `${label ?? title} · message`,
-                          detail: message.body.slice(0, 4_000),
-                          messageId: message.id,
-                        },
-                      ])
-                    }
-                  >
-                    Quote
-                  </button>
+                {!mine && message.body.length > 1 ? (
+                  <span className="msg-actions">
+                    {onContext ? (
+                      <button
+                        type="button"
+                        className="msg-quote"
+                        title="Point your next message at this"
+                        onClick={() =>
+                          onContext([
+                            ...context,
+                            {
+                              kind: 'message',
+                              label: `${label ?? title} · message`,
+                              detail: message.body.slice(0, 4_000),
+                              messageId: message.id,
+                            },
+                          ])
+                        }
+                      >
+                        Quote
+                      </button>
+                    ) : null}
+                    {onAddToPlan ? (
+                      <button
+                        type="button"
+                        className="msg-quote"
+                        title="Keep this in the Plan document"
+                        onClick={() => onAddToPlan(message.body)}
+                      >
+                        Add to Plan
+                      </button>
+                    ) : null}
+                  </span>
                 ) : null}
                 {message.context?.length ? (
                   <ul className="msg-context">

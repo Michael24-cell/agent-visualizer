@@ -13,6 +13,9 @@ export function DocumentSection({
   example,
   busy,
   onSave,
+  onAsk,
+  onMove,
+  moveTargets = [],
   footer,
 }: {
   id: string;
@@ -25,12 +28,36 @@ export function DocumentSection({
   example: string;
   busy: boolean;
   onSave: (lines: string[]) => Promise<void>;
+  // Point your next message at one line.
+  onAsk?: ((line: string, index: number) => void) | undefined;
+  // Move one line to another section of the same document.
+  onMove?: ((line: string, index: number, target: string) => void) | undefined;
+  moveTargets?: readonly { id: string; title: string }[];
   // Shown under the lines: e.g. which tasks implement this section.
   footer?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
+  const [editingLine, setEditingLine] = useState<number>();
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // One line at a time: edit it in place, or move it within the section.
+  const saveLine = (index: number, next: string) => {
+    setEditingLine(undefined);
+    const trimmed = next.trim();
+    if (trimmed === lines[index]) return;
+    const updated = trimmed
+      ? lines.map((line, at) => (at === index ? trimmed : line))
+      : lines.filter((_, at) => at !== index);
+    void onSave(updated);
+  };
+  const swap = (from: number, to: number) => {
+    if (to < 0 || to >= lines.length) return;
+    const updated = [...lines];
+    const [moved] = updated.splice(from, 1);
+    updated.splice(to, 0, moved!);
+    return onSave(updated);
+  };
 
   const start = () => {
     setDraft(lines.join('\n'));
@@ -113,7 +140,94 @@ export function DocumentSection({
       ) : lines.length ? (
         <ul className="doc-lines">
           {lines.map((line, index) => (
-            <li key={`${index}-${line}`}>{line}</li>
+            <li key={`${index}-${line}`} className="doc-line">
+              {editingLine === index ? (
+                <input
+                  className="doc-line-input"
+                  autoFocus
+                  defaultValue={line}
+                  aria-label={`${title} line ${index + 1}`}
+                  onBlur={(event) => saveLine(index, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      saveLine(index, event.currentTarget.value);
+                    }
+                    if (event.key === 'Escape') setEditingLine(undefined);
+                  }}
+                />
+              ) : (
+                <>
+                  <span className="doc-line-text">{line}</span>
+                  <span className="doc-line-actions">
+                    {onAsk ? (
+                      <button
+                        type="button"
+                        title="Point your next message at this line"
+                        onClick={() => onAsk(line, index)}
+                      >
+                        Ask
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      title="Edit this line"
+                      aria-label={`Edit ${title} line ${index + 1}`}
+                      onClick={() => setEditingLine(index)}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      title="Move up"
+                      aria-label={`Move ${title} line ${index + 1} up`}
+                      disabled={index === 0 || busy}
+                      onClick={() => void swap(index, index - 1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      title="Move down"
+                      aria-label={`Move ${title} line ${index + 1} down`}
+                      disabled={index === lines.length - 1 || busy}
+                      onClick={() => void swap(index, index + 1)}
+                    >
+                      ↓
+                    </button>
+                    {onMove && moveTargets.length ? (
+                      <select
+                        aria-label={`Move ${title} line ${index + 1} to another section`}
+                        title="Move to another section"
+                        value=""
+                        disabled={busy}
+                        onChange={(event) => {
+                          if (event.target.value)
+                            onMove(line, index, event.target.value);
+                        }}
+                      >
+                        <option value="">Move…</option>
+                        {moveTargets.map((entry) => (
+                          <option key={entry.id} value={entry.id}>
+                            {entry.title}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <button
+                      type="button"
+                      title="Remove this line"
+                      aria-label={`Remove ${title} line ${index + 1}`}
+                      disabled={busy}
+                      onClick={() =>
+                        void onSave(lines.filter((_, at) => at !== index))
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                </>
+              )}
+            </li>
           ))}
         </ul>
       ) : (

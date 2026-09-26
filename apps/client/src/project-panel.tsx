@@ -11,6 +11,7 @@ import {
   type BriefFieldId,
   type MethodDefinition,
   type MethodSectionId,
+  type MessageContext,
   type ProjectEvent,
   type ProjectResponse,
 } from '@harness/contracts';
@@ -20,6 +21,7 @@ import {
   listMethods,
   overrideMethod,
   readEvents,
+  readProject,
   resetMethod,
   updateBriefField,
 } from './api';
@@ -231,7 +233,13 @@ function BriefView({ project, busy, onProject, onError }: DetailProps) {
   );
 }
 
-function MethodView({ project, busy, onProject, onError }: DetailProps) {
+function MethodView({
+  project,
+  busy,
+  onProject,
+  onError,
+  onAsk,
+}: DetailProps & { onAsk?: ((context: MessageContext) => void) | undefined }) {
   const [catalog, setCatalog] = useState<MethodDefinition[]>();
   const method = project.projection.method;
   const projectId = project.projection.projectId;
@@ -334,6 +342,18 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
                   example={example}
                   busy={busy}
                   onSave={(lines) => save(sectionId, lines)}
+                  {...(onAsk
+                    ? {
+                        onAsk: (line: string, index: number) =>
+                          onAsk({
+                            kind: 'method',
+                            label: `Method · ${sectionLabels[sectionId]}`,
+                            detail: line,
+                            sectionId,
+                            line: index + 1,
+                          }),
+                      }
+                    : {})}
                 />
               );
             })}
@@ -415,7 +435,13 @@ function MethodView({ project, busy, onProject, onError }: DetailProps) {
   );
 }
 
-function PlanView({ project, busy, onProject, onError }: DetailProps) {
+function PlanView({
+  project,
+  busy,
+  onProject,
+  onError,
+  onAsk,
+}: DetailProps & { onAsk?: ((context: MessageContext) => void) | undefined }) {
   const projectId = project.projection.projectId;
   const doc = project.projection.planDocument;
   const plans = Object.values(project.projection.plans).sort(
@@ -433,12 +459,28 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
         lines,
       );
       onProject(result.project);
+      return result.project;
     } catch (error) {
       onError(
         error instanceof Error ? error.message : 'The section was not saved.',
       );
       throw error;
     }
+  };
+  // The second half of a move: the document moved, so read its sequence
+  // from the response the first half returned.
+  const saveInto = async (
+    sectionId: (typeof PlanSectionIdSchema.options)[number],
+    lines: string[],
+  ) => {
+    const current = await readProject(projectId);
+    const result = await editPlanSection(
+      projectId,
+      current.projection.planDocument.lastSequence,
+      sectionId,
+      lines,
+    );
+    onProject(result.project);
   };
   return (
     <div className="plan-view">
@@ -465,7 +507,34 @@ function PlanView({ project, busy, onProject, onError }: DetailProps) {
               }
               example={`${PLAN_SECTIONS[sectionId].title}: …`}
               busy={busy}
-              onSave={(lines) => save(sectionId, lines)}
+              onSave={async (lines) => {
+                await save(sectionId, lines);
+              }}
+              {...(onAsk
+                ? {
+                    onAsk: (line: string, index: number) =>
+                      onAsk({
+                        kind: 'plan',
+                        label: `Plan · ${PLAN_SECTIONS[sectionId].title}`,
+                        detail: line,
+                        sectionId,
+                        line: index + 1,
+                      }),
+                  }
+                : {})}
+              onMove={(line, index, targetId) => {
+                const to = PlanSectionIdSchema.parse(targetId);
+                const fromLines = (section?.lines ?? []).filter(
+                  (_, at) => at !== index,
+                );
+                const toLines = [...(doc.sections[to]?.lines ?? []), line];
+                void save(sectionId, fromLines)
+                  .then(() => saveInto(to, toLines))
+                  .catch(() => undefined);
+              }}
+              moveTargets={PlanSectionIdSchema.options
+                .filter((id) => id !== sectionId)
+                .map((id) => ({ id, title: PLAN_SECTIONS[id].title }))}
               footer={<SectionTasks project={project} sectionId={sectionId} />}
             />
           );
@@ -755,10 +824,12 @@ export function ProjectDetail({
   item,
   artifact,
   onSelectArtifact,
+  onAsk,
   onClose,
   ...props
 }: DetailProps & {
   item: DetailItem;
+  onAsk?: ((context: MessageContext) => void) | undefined;
   artifact?: string | undefined;
   onSelectArtifact?: ((path: string | undefined) => void) | undefined;
   onClose: () => void;
@@ -790,8 +861,8 @@ export function ProjectDetail({
       </header>
       <div className="detail-body">
         {item === 'brief' ? <BriefView {...props} /> : null}
-        {item === 'method' ? <MethodView {...props} /> : null}
-        {item === 'plan' ? <PlanView {...props} /> : null}
+        {item === 'method' ? <MethodView {...props} onAsk={onAsk} /> : null}
+        {item === 'plan' ? <PlanView {...props} onAsk={onAsk} /> : null}
         {item === 'agents' ? <AgentsView {...props} /> : null}
         {item === 'artifacts' ? (
           <ArtifactsView

@@ -3,15 +3,18 @@ import type { ProjectListResponse, ProjectResponse } from '@harness/contracts';
 import {
   attachRepository,
   createAgent,
+  editPlanSection,
   listProjects,
   readProject,
   setTrust,
 } from './api';
 import {
+  PLAN_SECTIONS,
   TRUST_POLICIES,
   TrustPolicySchema,
   projectTrust,
   type MessageContext,
+  type PlanSectionId,
 } from '@harness/contracts';
 import { FolderPicker } from './folder-picker';
 import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
@@ -121,6 +124,56 @@ export function Workspace({
   };
 
   const trust = projectTrust(project.projection.project);
+  // Points a document line, file range or element at the conversation you
+  // are typing in: the active pane, else the first agent, else the
+  // coordinator. Opens that pane and shows the chip.
+  const attachContext = (item: MessageContext) => {
+    const all = liveTargets(project);
+    const active = openTargets[activeIndex];
+    const chosen =
+      active ?? all.find((candidate) => candidate.kind === 'agent') ?? all[0];
+    if (!chosen) return;
+    const id = liveTargetId(chosen);
+    show(id);
+    setContexts((current) => {
+      const existing = current[id] ?? [];
+      if (
+        existing.some(
+          (entry) => entry.label === item.label && entry.detail === item.detail,
+        )
+      ) {
+        return current;
+      }
+      return { ...current, [id]: [...existing, item].slice(-6) };
+    });
+    onNotice(`Attached ${item.label} to ${targetName(chosen)}.`);
+  };
+
+  // Keeps an idea from the conversation: appends it to a Plan section.
+  const addToPlan = (text: string, sectionId: PlanSectionId = 'features') => {
+    const document = project.projection.planDocument;
+    const line = text.trim().replace(/\s+/g, ' ').slice(0, 500);
+    const lines = document.sections[sectionId]?.lines ?? [];
+    if (!line || lines.some((entry) => entry === line)) {
+      onNotice(`Plan · ${PLAN_SECTIONS[sectionId].title} already has that.`);
+      return;
+    }
+    void editPlanSection(
+      project.projection.projectId,
+      document.lastSequence,
+      sectionId,
+      [...lines, line],
+    )
+      .then((result) => {
+        updateProject(result.project);
+        setDetail('plan');
+        onNotice(`Added to Plan · ${PLAN_SECTIONS[sectionId].title}.`);
+      })
+      .catch((error: unknown) =>
+        onError(error instanceof Error ? error.message : 'It was not added.'),
+      );
+  };
+
   const targets = liveTargets(project);
   const openTargets = open
     .map((id) => targets.find((t) => liveTargetId(t) === id))
@@ -413,6 +466,7 @@ export function Workspace({
               onProject={updateProject}
               onClose={() => close(liveTargetId(target))}
               onOpenArtifact={openArtifact}
+              onAddToPlan={addToPlan}
               context={contexts[liveTargetId(target)] ?? []}
               onContext={(next) =>
                 setContexts((current) => ({
@@ -434,6 +488,7 @@ export function Workspace({
           busy={false}
           onProject={updateProject}
           onError={onError}
+          onAsk={attachContext}
           onClose={() => setDetail(undefined)}
         />
       ) : null}
