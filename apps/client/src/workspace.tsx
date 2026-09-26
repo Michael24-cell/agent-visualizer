@@ -223,8 +223,8 @@ export function Workspace({
     { id: 'artifacts', label: 'Artifacts', note: artifactsNote(project) },
     {
       id: 'history',
-      label: 'History',
-      note: `${project.projection.lastSequence} events`,
+      label: 'Changes',
+      note: `${project.projection.lastSequence} recorded`,
     },
   ];
 
@@ -526,6 +526,12 @@ export function Workspace({
           onProject={updateProject}
           onError={onError}
           onAsk={attachContext}
+          onOpenArtifact={openArtifact}
+          onOpenAgent={(agentId) => {
+            show(agentId);
+            setView('chat');
+          }}
+          onOpenSection={(item) => setDetail(item)}
           onClose={() => setDetail(undefined)}
         />
       ) : null}

@@ -26,6 +26,12 @@ import {
   updateBriefField,
 } from './api';
 import { ArtifactsView } from './artifacts';
+import {
+  buildChanges,
+  type ChangeEntry,
+  type ChangeKind,
+  type ChangeWho,
+} from './project-changes';
 import { DocumentSection } from './document-section';
 import {
   documentChanges,
@@ -779,10 +785,26 @@ function AgentsView({ project }: DetailProps) {
   );
 }
 
-function HistoryView({ project }: DetailProps) {
+function HistoryView({
+  project,
+  onAsk,
+  onOpenArtifact,
+  onOpenAgent,
+  onOpenSection,
+}: DetailProps & {
+  onAsk?: ((context: MessageContext) => void) | undefined;
+  onOpenArtifact?: ((path: string) => void) | undefined;
+  onOpenAgent?: ((agentId: string) => void) | undefined;
+  onOpenSection?: ((item: DetailItem) => void) | undefined;
+}) {
   const [events, setEvents] = useState<ProjectEvent[]>();
+  const [who, setWho] = useState<'all' | ChangeWho>('all');
+  const [kind, setKind] = useState<'all' | ChangeKind>('all');
+  const [raw, setRaw] = useState(false);
+  const [open, setOpen] = useState<string>();
   const projectId = project.projection.projectId;
   const lastSequence = project.projection.lastSequence;
+
   useEffect(() => {
     let active = true;
     void readEvents(projectId)
@@ -796,20 +818,165 @@ function HistoryView({ project }: DetailProps) {
       active = false;
     };
   }, [projectId, lastSequence]);
-  if (!events) return <p className="field-state">Loading history…</p>;
+
+  if (!events) return <p className="field-state">Loading changes…</p>;
+
+  if (raw) {
+    return (
+      <>
+        <div className="changes-filters">
+          <button
+            type="button"
+            className="quiet-button is-on"
+            onClick={() => setRaw(false)}
+          >
+            Changes
+          </button>
+          <span className="doc-hint">Raw events</span>
+        </div>
+        <ol className="history-list">
+          {[...events].reverse().map((event) => (
+            <li key={event.id}>
+              <span className="history-seq">{event.sequence}</span>
+              <code>{event.type}</code>
+              <span className="field-state">
+                {event.source}
+                {event.adapter ? ` · ${event.adapter.id}` : ''}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </>
+    );
+  }
+
+  const changes = buildChanges(events).filter(
+    (change) =>
+      (who === 'all' || change.who === who) &&
+      (kind === 'all' || change.kind === kind),
+  );
+
+  const openTarget = (change: ChangeEntry) => {
+    const target = change.target;
+    if (!target) return;
+    if (target.kind === 'file') onOpenArtifact?.(target.path);
+    if (target.kind === 'agent') onOpenAgent?.(target.agentId);
+    if (target.kind === 'plan') onOpenSection?.('plan');
+    if (target.kind === 'method') onOpenSection?.('method');
+  };
+
   return (
-    <ol className="history-list">
-      {[...events].reverse().map((event) => (
-        <li key={event.id}>
-          <span className="history-seq">{event.sequence}</span>
-          <code>{event.type}</code>
-          <span className="field-state">
-            {event.source}
-            {event.adapter ? ` · ${event.adapter.id}` : ''}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <>
+      <div className="changes-filters">
+        <select
+          value={who}
+          aria-label="Filter by who changed it"
+          onChange={(event) => setWho(event.target.value as 'all' | ChangeWho)}
+        >
+          <option value="all">Everyone</option>
+          <option value="you">You</option>
+          <option value="coordinator">Coordinator</option>
+          <option value="agent">Agents</option>
+          <option value="harness">Harness</option>
+        </select>
+        <select
+          value={kind}
+          aria-label="Filter by what changed"
+          onChange={(event) =>
+            setKind(event.target.value as 'all' | ChangeKind)
+          }
+        >
+          <option value="all">Everything</option>
+          <option value="idea">Ideas</option>
+          <option value="file">Files</option>
+          <option value="check">Checks</option>
+          <option value="task">Tasks</option>
+          <option value="decision">Decisions</option>
+          <option value="setting">Settings</option>
+        </select>
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => setRaw(true)}
+        >
+          Raw events
+        </button>
+      </div>
+      {changes.length === 0 ? (
+        <p className="field-value muted">Nothing matches that filter.</p>
+      ) : null}
+      <ol className="changes-list">
+        {changes.map((change) => (
+          <li key={change.id} className={`change change-${change.kind}`}>
+            <div className="change-head">
+              <span
+                className={`change-dot who-${change.who}`}
+                aria-hidden="true"
+              />
+              {change.target ? (
+                <button
+                  type="button"
+                  className="change-title"
+                  onClick={() => openTarget(change)}
+                >
+                  {change.title}
+                </button>
+              ) : (
+                <span className="change-title">{change.title}</span>
+              )}
+              <span className="change-who">{change.who}</span>
+            </div>
+            {change.added?.length || change.removed?.length ? (
+              <button
+                type="button"
+                className="change-delta"
+                aria-expanded={open === change.id}
+                onClick={() =>
+                  setOpen(open === change.id ? undefined : change.id)
+                }
+              >
+                {change.added?.length ? `+${change.added.length}` : ''}
+                {change.added?.length && change.removed?.length ? ' ' : ''}
+                {change.removed?.length ? `−${change.removed.length}` : ''}
+              </button>
+            ) : null}
+            {open === change.id ? (
+              <ul className="change-lines">
+                {change.added?.map((line) => (
+                  <li key={`+${line}`} className="added">
+                    {line}
+                  </li>
+                ))}
+                {change.removed?.map((line) => (
+                  <li key={`-${line}`} className="removed">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {change.detail ? (
+              <p className="change-detail">{change.detail}</p>
+            ) : null}
+            {onAsk && change.target?.kind === 'file' ? (
+              <button
+                type="button"
+                className="quiet-button change-ask"
+                onClick={() =>
+                  onAsk({
+                    kind: 'file',
+                    label: change.title,
+                    ...(change.detail ? { detail: change.detail } : {}),
+                    path: change.title,
+                  })
+                }
+              >
+                Ask about this
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -825,11 +992,17 @@ export function ProjectDetail({
   artifact,
   onSelectArtifact,
   onAsk,
+  onOpenArtifact,
+  onOpenAgent,
+  onOpenSection,
   onClose,
   ...props
 }: DetailProps & {
   item: DetailItem;
   onAsk?: ((context: MessageContext) => void) | undefined;
+  onOpenArtifact?: ((path: string) => void) | undefined;
+  onOpenAgent?: ((agentId: string) => void) | undefined;
+  onOpenSection?: ((item: DetailItem) => void) | undefined;
   artifact?: string | undefined;
   onSelectArtifact?: ((path: string | undefined) => void) | undefined;
   onClose: () => void;
@@ -840,7 +1013,7 @@ export function ProjectDetail({
     plan: 'Plan',
     agents: 'Agents',
     artifacts: 'Artifacts',
-    history: 'History',
+    history: 'Changes',
   };
   return (
     <aside
@@ -872,7 +1045,15 @@ export function ProjectDetail({
             onAsk={onAsk}
           />
         ) : null}
-        {item === 'history' ? <HistoryView {...props} /> : null}
+        {item === 'history' ? (
+          <HistoryView
+            {...props}
+            onAsk={onAsk}
+            onOpenArtifact={onOpenArtifact}
+            onOpenAgent={onOpenAgent}
+            onOpenSection={onOpenSection}
+          />
+        ) : null}
       </div>
     </aside>
   );
