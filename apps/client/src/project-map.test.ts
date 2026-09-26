@@ -1,6 +1,6 @@
 import { ProjectResponseSchema } from '@harness/contracts';
 import { describe, expect, it } from 'vitest';
-import { branchOf, buildProjectMap } from './project-map';
+import { branchOf, buildLooseEnds, buildProjectMap } from './project-map';
 
 const at = '2026-03-01T00:00:00.000Z';
 
@@ -181,5 +181,69 @@ describe('buildProjectMap', () => {
       'task_1',
     ]);
     expect([...branchOf(map, 'idea:features')]).toEqual(['idea:features']);
+  });
+});
+
+describe('buildLooseEnds', () => {
+  it('lists ideas nobody took, and nothing else when the work is clean', () => {
+    const ends = buildLooseEnds(project());
+    expect(ends).toMatchObject([
+      {
+        kind: 'idea',
+        title: 'Features: 1 idea with no task',
+        note: 'Offline sync',
+        context: { kind: 'plan', sectionId: 'features' },
+      },
+    ]);
+  });
+
+  it('lists stopped work, unverified files and denied asks', () => {
+    const response = project();
+    const projection = response.projection;
+    const stopped = {
+      ...response,
+      projection: {
+        ...projection,
+        checks: {},
+        tasks: {
+          ...projection.tasks,
+          task_1: {
+            ...projection.tasks.task_1!,
+            state: 'stopped' as const,
+            endReason: 'Stopped by you.',
+          },
+        },
+        asks: {
+          ask_1: {
+            id: 'ask_1',
+            projectId: 'project_x',
+            agentId: 'agent_a',
+            taskId: 'task_1',
+            action: 'Run Bash',
+            reason: 'It wanted the shell.',
+            scope: 'rm -rf dist',
+            consequences: 'Runs the command.',
+            state: 'denied' as const,
+            openedAtSequence: 4,
+            decidedAtSequence: 5,
+          },
+        },
+      },
+    };
+    const ends = buildLooseEnds(ProjectResponseSchema.parse(stopped));
+    expect(ends.map((end) => [end.kind, end.title])).toEqual([
+      ['idea', 'Features: 1 idea with no task'],
+      ['task', 'Stopped: Build the search page'],
+      ['file', 'src/search.ts changed, nothing ran'],
+      ['ask', 'You declined: Run Bash'],
+    ]);
+    expect(ends[1]).toMatchObject({
+      note: 'Stopped by you.',
+      agentId: 'agent_a',
+    });
+    expect(ends[2]!.context).toMatchObject({
+      kind: 'file',
+      path: 'src/search.ts',
+    });
   });
 });

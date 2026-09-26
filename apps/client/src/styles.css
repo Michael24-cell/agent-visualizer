@@ -6216,6 +6216,14 @@ button:disabled {
   color: var(--text);
 }
 
+/* The map view: what is hanging, then the shape of the work. */
+.map-view {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 /* The map: ideas, the tasks that took them, the files they produced. */
 .map {
   position: relative;
@@ -6338,7 +6346,13 @@ button:disabled {
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
+  min-width: 0;
+}
+.map-idea li {
+  min-width: 0;
+  overflow: hidden;
 }
 .map-idea li button {
   width: 100%;
@@ -6414,6 +6428,7 @@ button:disabled {
   padding: 0;
   display: grid;
   gap: 2px;
+  align-content: start;
 }
 .change {
   display: grid;
@@ -6522,4 +6537,59 @@ button.change-title:hover {
   white-space: pre-wrap;
   max-height: 6.5em;
   overflow: hidden;
+}
+
+/* What is hanging, above the map. */
+.loose-ends {
+  margin: 16px 24px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--amber-rgb), 0.35);
+  border-radius: 10px;
+  background: rgba(var(--amber-rgb), 0.05);
+}
+.loose-ends h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.loose-ends h3 span {
+  color: var(--text-muted);
+}
+.loose-ends ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.loose-ends li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.loose-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loose-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loose-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 4px;
 }

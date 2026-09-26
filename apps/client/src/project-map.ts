@@ -151,3 +151,99 @@ export function branchOf(map: ProjectMap, nodeId: string): Set<string> {
   }
   return branch;
 }
+
+// What is hanging: ideas nobody took, work that stopped, files nothing
+// proved, decisions that closed a door. Each carries the one thing to
+// point at when you pick it up again.
+export interface LooseEnd {
+  readonly id: string;
+  readonly kind: 'idea' | 'task' | 'file' | 'ask';
+  readonly title: string;
+  readonly note: string;
+  readonly context: {
+    readonly kind: 'plan' | 'file' | 'message';
+    readonly label: string;
+    readonly detail: string;
+    readonly sectionId?: string;
+    readonly path?: string;
+  };
+  readonly agentId?: string;
+}
+
+export function buildLooseEnds(project: ProjectResponse): LooseEnd[] {
+  const projection = project.projection;
+  const map = buildProjectMap(project);
+  const ends: LooseEnd[] = [];
+
+  for (const idea of map.ideas) {
+    if (!idea.unclaimed) continue;
+    ends.push({
+      id: `loose:${idea.id}`,
+      kind: 'idea',
+      title: `${idea.title}: ${idea.lines.length} ${idea.lines.length === 1 ? 'idea' : 'ideas'} with no task`,
+      note: idea.lines.slice(0, 2).join(' · '),
+      context: {
+        kind: 'plan',
+        label: `Plan · ${idea.title}`,
+        detail: idea.lines.join('\n'),
+        sectionId: idea.sectionId,
+      },
+    });
+  }
+
+  for (const task of map.tasks) {
+    if (task.state !== 'failed' && task.state !== 'stopped') continue;
+    const record = projection.tasks[task.id];
+    ends.push({
+      id: `loose:${task.id}`,
+      kind: 'task',
+      title: `${task.state === 'failed' ? 'Failed' : 'Stopped'}: ${task.title}`,
+      note: record?.endReason ?? task.agentName,
+      context: {
+        kind: 'message',
+        label: `Task · ${task.title}`,
+        detail: record?.objective ?? task.title,
+      },
+      agentId: task.agentId,
+    });
+  }
+
+  for (const task of map.tasks) {
+    if (!task.unverified) continue;
+    for (const fileId of task.fileIds) {
+      const file = map.files.find((entry) => entry.id === fileId);
+      if (!file) continue;
+      ends.push({
+        id: `loose:verify:${file.id}`,
+        kind: 'file',
+        title: `${file.path} changed, nothing ran`,
+        note: task.title,
+        context: {
+          kind: 'file',
+          label: file.path,
+          detail: `Changed by “${task.title}” with no passing check.`,
+          path: file.path,
+        },
+        agentId: task.agentId,
+      });
+    }
+  }
+
+  for (const ask of Object.values(projection.asks)) {
+    if (ask.state !== 'denied') continue;
+    ends.push({
+      id: `loose:${ask.id}`,
+      kind: 'ask',
+      title: `You declined: ${ask.action}`,
+      note: ask.reason,
+      context: {
+        kind: 'message',
+        label: `Declined · ${ask.action}`,
+        detail: `${ask.reason} Scope: ${ask.scope}.`,
+      },
+      agentId: ask.agentId,
+    });
+  }
+
+  return ends;
+}
