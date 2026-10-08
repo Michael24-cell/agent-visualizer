@@ -78,15 +78,17 @@ None of it is shown as quantity or time:
   check.
 - **No "most done"** — tasks ranked by evidence (files + passing checks)
   against effort (tool calls + duration).
+- **No cost.** Both runtimes hand us token usage on every finish and we
+  drop it. See "Cost and model fit" below.
 
 All of it is derivable client-side from `/events`, exactly the way
 `buildChanges` and `buildProjectMap` already work. No new events, no new
 persistence, no new writes.
 
-**One honest gap:** token and cost usage are _not_ recorded. The runtimes
-never report them. "Agent usage" in the money sense needs a new field on the
-runner result and an event to carry it — a real change, not a derivation.
-Everything else above is free.
+**One correction to the first draft of this audit:** token usage is not
+missing, it is discarded. Both runtimes already receive it and throw it
+away, so cost tracking is a small change, not instrumentation work — see
+"Cost and model fit" below. Everything else above is a pure derivation.
 
 ## Visualization, per tab
 
@@ -159,13 +161,105 @@ Ordered by leverage, each a reviewable commit with tests, as before.
 4. **Time in Changes** — render `at`, group by day, "since I last looked".
 5. **Map weight and file heat** — nodes sized by evidence, a Files column
    that ranks by churn.
-6. **Claude runtime parity** — Plan/Method tools over MCP, forwarded
+6. **Cost and model fit** — record real token usage, price it, show it, and
+   say when a task belonged on a different model. Specified below.
+7. **Claude runtime parity** — Plan/Method tools over MCP, forwarded
    follow-ups through streaming input, diffs on writes. Still outstanding
    from the previous audit; needed before the paid path is honest.
-7. **Flow fixes** — folder check at plan time, Loose ends in the sidebar,
+8. **Flow fixes** — folder check at plan time, Loose ends in the sidebar,
    auto-refresh, trust where the asks are.
 
-Items 1–5 need no new persistence. Item 6 is runtime work. Item 7 is small.
+Items 1–5 need no new persistence. Items 6–7 are runtime work. Item 8 is
+small.
+
+## Cost and model fit (plan item 6)
+
+The audit said token usage is not recorded. It is, however, _handed to us
+and dropped_ — both runtimes already receive it:
+
+- **Claude.** The Agent SDK's `result` message carries `usage`,
+  `modelUsage` (per-model totals; the SDK's own docs call this "the correct
+  field for token/cost accounting"), `total_cost_usd`, `duration_ms` and
+  `num_turns`. [mapper.ts](packages/runtime-claude/src/mapper.ts) reads
+  `subtype` and the result text and ignores all of it.
+- **OpenAI-compatible (Groq, Ollama).** The endpoint returns a standard
+  `usage` object. Our `ChatCompletion` interface in
+  [runner.ts:51](packages/runtime-openai/src/runner.ts:51) simply does not
+  declare the field, so it is parsed away.
+
+So this is not instrumentation work. It is picking up two numbers we are
+already being given.
+
+### Prices
+
+Anthropic first-party rates, per million tokens. Your recollection was
+right about Haiku and close on Sonnet — Sonnet 5 is $2 in, $10 out.
+
+| Model                       | Input | Output | Context |
+| --------------------------- | ----- | ------ | ------- |
+| Claude Haiku 4.5            | $1.00 | $5.00  | 200K    |
+| Claude Sonnet 5             | $2.00 | $10.00 | 1M      |
+| Claude Sonnet 4.6           | $3.00 | $15.00 | 1M      |
+| Claude Opus 5               | $5.00 | $25.00 | 1M      |
+| Claude Opus 4.8 / 4.7 / 4.6 | $5.00 | $25.00 | 1M      |
+
+The three tiers we expose today are Haiku, Sonnet 5 and Opus 5, so the
+spread that matters is **5× on input and 5× on output between Haiku and
+Opus**, with Sonnet at 2×/2× over Haiku.
+
+Two discounts change the arithmetic more than model choice usually does:
+
+- **Prompt caching** — a cache read costs roughly a tenth of an input
+  token; writing the cache costs about 1.25×. A long system prompt or a big
+  file read repeatedly is the cheapest thing in the project if it is cached
+  and the most expensive if it is not.
+- **Batch** — 50% off, for work that does not need to be interactive.
+
+These are first-party rates. Bedrock and Vertex are partner-operated and
+priced separately; Groq's free tier is $0, which makes it the baseline to
+compare _against_, not a number to display as a win.
+
+### What to build
+
+1. **A price table in contracts**, beside `AGENT_MODELS`: input, output,
+   cache-read and cache-write rates per model id, with the date the rates
+   were read. Prices change; a stale number presented as fact is the kind
+   of thing this product exists to avoid, so it carries its date.
+2. **Record usage.** Both runtimes return `{ inputTokens, outputTokens,
+cacheReadTokens, cacheWriteTokens, modelId, durationMs, turns }` on
+   finish; a `task.usage_reported` event carries it; the projection sums it
+   per task and per agent. One event, one reducer case.
+3. **Price it in the derivation layer** (`buildUsage`, item 2): cost per
+   task, per agent, per project, computed from recorded tokens and the
+   table — never from a vendor total alone, so the arithmetic is
+   inspectable. Where Claude gives `total_cost_usd`, show both and say
+   which is the vendor's estimate.
+4. **Show it where the decision is made.** The model picker beside Send
+   already names the model; it should name the price (`Haiku · $1/$5 per
+M`). The Agents tab shows spend per agent and per task. The project
+   header shows the run total, because a number you never see is a number
+   you never manage.
+5. **Say when the model was wrong — from the recorded shape, not vibes.**
+   The honest form is a counterfactual on real token counts: _"this task
+   used 180K in / 12K out, all reads and one small edit, no failed checks.
+   On Haiku that is $0.24 instead of $1.20."_ Rules worth encoding, each
+   derived from data we already keep:
+   - a task whose tools were all `Read` / `Grep` / `Glob` with no failed
+     check did not need the deep tier;
+   - a task that failed the same check twice, or was stopped and
+     restarted, is evidence for raising the tier, not lowering it;
+   - a long Opus task with a small diff is the expensive shape;
+   - cache-read share near zero on a repeated-context agent is a bigger
+     saving than any model swap.
+
+   Shown as a note on the task, with the numbers behind it, and never
+   applied automatically — the model is the user's choice.
+
+**Honest limits to state in the UI.** Token counts are not strictly
+comparable across models (Opus 4.7 and later use a different tokenizer, so
+a counterfactual is an estimate, not a quote). `total_cost_usd` is the
+SDK's own estimate, not a bill. And nothing here knows about your plan,
+rate limits, or discounts — it prices list rates against recorded tokens.
 
 ## Left off
 
