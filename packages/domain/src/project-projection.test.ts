@@ -533,6 +533,49 @@ describe('agent, task, and work lifecycles', () => {
     );
   });
 
+  it('sums token usage per model on the task, and only from its own agent', () => {
+    const s = new Scenario().createProject();
+    s.addAgent('agent_a');
+    s.addAgent('agent_b');
+    s.assign('task_1', 'agent_a');
+    const turn = (modelId: string, inputTokens: number, outputTokens: number) =>
+      s.emit('task.usage_reported', {
+        taskId: 'task_1',
+        agentId: 'agent_a',
+        modelId,
+        provider: 'anthropic',
+        inputTokens,
+        outputTokens,
+      });
+    turn('claude-sonnet-5', 1_000, 50);
+    turn('claude-sonnet-5', 2_000, 70);
+    turn('claude-haiku-4-5', 300, 10);
+    expect(s.p.tasks.task_1?.usage).toEqual({
+      'claude-sonnet-5': {
+        provider: 'anthropic',
+        inputTokens: 3_000,
+        outputTokens: 120,
+        turns: 2,
+      },
+      'claude-haiku-4-5': {
+        provider: 'anthropic',
+        inputTokens: 300,
+        outputTokens: 10,
+        turns: 1,
+      },
+    });
+    expect(() =>
+      s.emit('task.usage_reported', {
+        taskId: 'task_1',
+        agentId: 'agent_b',
+        modelId: 'claude-sonnet-5',
+        provider: 'anthropic',
+        inputTokens: 1,
+        outputTokens: 1,
+      }),
+    ).toThrowError(code('invalid_payload'));
+  });
+
   it('keeps the conversation open after done, stopped, or failed, and starts new work explicitly', () => {
     const s = new Scenario().createProject();
     const threadId = s.addAgent('agent_a');

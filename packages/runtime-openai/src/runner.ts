@@ -56,7 +56,31 @@ interface ChatCompletion {
     };
     readonly finish_reason?: string;
   }[];
+  // Standard on OpenAI-compatible servers (Groq, OpenAI, Ollama, vLLM);
+  // absent on some, in which case the turn reports nothing.
+  readonly usage?: {
+    readonly prompt_tokens?: number;
+    readonly completion_tokens?: number;
+  };
   readonly error?: { readonly message?: string };
+}
+
+type Completion = ChatCompletion['choices'][number]['message'];
+
+// Who serves the endpoint, for pricing: a model on this machine has no
+// per-token price; Groq and OpenAI have list rates.
+export function providerFor(baseUrl: string): 'openai' | 'groq' | 'local' {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname;
+  } catch {
+    return 'openai';
+  }
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+    return 'local';
+  }
+  if (host.endsWith('groq.com')) return 'groq';
+  return 'openai';
 }
 
 const SUMMARY_MAX = 600;
@@ -132,7 +156,7 @@ async function complete(
   tools: readonly ToolDefinition[],
   signal: AbortSignal,
   attempt = 0,
-): Promise<ChatCompletion['choices'][number]['message']> {
+): Promise<{ message: Completion; usage: ChatCompletion['usage'] }> {
   const doFetch = options.fetch ?? fetch;
   const timeoutMs = options.turnTimeoutMs ?? 180_000;
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -190,7 +214,7 @@ async function complete(
   if (completion.error?.message) throw new Error(completion.error.message);
   const message = completion.choices?.[0]?.message;
   if (!message) throw new Error('The model returned no choices.');
-  return message;
+  return { message, usage: completion.usage };
 }
 
 export function runOpenAiTask(
@@ -212,6 +236,7 @@ export function runOpenAiTask(
     ...(input.documents ? documentTools(input.documents) : []),
   ];
   const maxTurns = options.maxTurns ?? 30;
+  const provider = providerFor(options.baseUrl);
   let stopped = false;
 
   const emit = (intents: AgentStepIntent[]): boolean => {
@@ -251,12 +276,27 @@ export function runOpenAiTask(
         while (inbox.length > 0) {
           messages.push({ role: 'user', content: inbox.shift()! });
         }
-        const reply = await complete(
+        const { message: reply, usage } = await complete(
           options,
           messages,
           tools,
           abortController.signal,
         );
+        // Report the turn's tokens before anything else it caused, so the
+        // spend is kept even if the next step stops the run.
+        if (
+          usage &&
+          !emit([
+            {
+              kind: 'usage',
+              modelId: options.model,
+              provider,
+              inputTokens: usage.prompt_tokens ?? 0,
+              outputTokens: usage.completion_tokens ?? 0,
+            },
+          ])
+        )
+          return;
         let text = stripHallucinatedResponses(reply.content ?? '');
         let calls: readonly ToolCall[] = reply.tool_calls ?? [];
         if (calls.length === 0 && text) {

@@ -91,6 +91,12 @@ function pathLabel(input: Record<string, unknown>): string {
 // output is recorded once, with both the call and its outcome.
 export class ClaudeMessageMapper {
   private readonly pending = new Map<string, PendingToolUse>();
+  // Tokens already reported per model. The SDK's totals are cumulative
+  // across turns of one query, so each result reports only what is new.
+  private readonly reported = new Map<
+    string,
+    { input: number; output: number }
+  >();
   private finished = false;
   private lastSaid = '';
 
@@ -213,9 +219,11 @@ export class ClaudeMessageMapper {
     message: Extract<SDKMessage, { type: 'result' }>,
   ): AgentStepIntent[] {
     this.finished = true;
+    const usage = this.usageOf(message);
     if (message.subtype === 'success' && !message.is_error) {
       const reason = nonEmpty(message.result, 'Finished.');
       return [
+        ...usage,
         {
           kind: 'finish',
           reason,
@@ -231,11 +239,43 @@ export class ClaudeMessageMapper {
           ? message.result
           : message.subtype.replaceAll('_', ' ');
     return [
+      ...usage,
       {
         kind: 'fail',
         reason: nonEmpty(detail, 'The agent stopped with an error.'),
       },
     ];
+  }
+
+  // modelUsage covers every model the query called (subagents included),
+  // which the SDK documents as the field for cost accounting. Cache reads
+  // and writes count as input: the question is what the work used.
+  private usageOf(
+    message: Extract<SDKMessage, { type: 'result' }>,
+  ): AgentStepIntent[] {
+    const byModel = 'modelUsage' in message ? message.modelUsage : undefined;
+    if (!byModel) return [];
+    const intents: AgentStepIntent[] = [];
+    for (const [modelId, totals] of Object.entries(byModel)) {
+      const input =
+        (totals.inputTokens ?? 0) +
+        (totals.cacheReadInputTokens ?? 0) +
+        (totals.cacheCreationInputTokens ?? 0);
+      const output = totals.outputTokens ?? 0;
+      const before = this.reported.get(modelId) ?? { input: 0, output: 0 };
+      this.reported.set(modelId, { input, output });
+      const inputTokens = Math.max(0, input - before.input);
+      const outputTokens = Math.max(0, output - before.output);
+      if (inputTokens === 0 && outputTokens === 0) continue;
+      intents.push({
+        kind: 'usage',
+        modelId,
+        provider: 'anthropic',
+        inputTokens,
+        outputTokens,
+      });
+    }
+    return intents;
   }
 }
 

@@ -207,17 +207,13 @@ The three tiers we expose today are Haiku, Sonnet 5 and Opus 5, so the
 spread that matters is **5× on input and 5× on output between Haiku and
 Opus**, with Sonnet at 2×/2× over Haiku.
 
-Two discounts change the arithmetic more than model choice usually does:
-
-- **Prompt caching** — a cache read costs roughly a tenth of an input
-  token; writing the cache costs about 1.25×. A long system prompt or a big
-  file read repeatedly is the cheapest thing in the project if it is cached
-  and the most expensive if it is not.
-- **Batch** — 50% off, for work that does not need to be interactive.
-
-These are first-party rates. Bedrock and Vertex are partner-operated and
-priced separately; Groq's free tier is $0, which makes it the baseline to
-compare _against_, not a number to display as a win.
+**Decision (2026-10-09): list price only.** Cache, batch and plan
+discounts are left out on purpose — the number answers "what did this work
+use", not "what will the invoice say". Cache reads and writes count as
+ordinary input tokens. The full table, including OpenAI's current models
+and what this project runs on, lives in
+[model-costs.ts](packages/contracts/src/model-costs.ts) with the date it was
+read and where each rate came from.
 
 ### What to build
 

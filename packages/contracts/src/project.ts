@@ -393,6 +393,24 @@ export const PLAN_SECTIONS: Readonly<
 // ---------------------------------------------------------------------------
 
 // The state of one task. An agent's work state mirrors its current task.
+// Who serves a model, for pricing. Local models have no per-token price.
+export const UsageProviderSchema = z.enum([
+  'anthropic',
+  'openai',
+  'groq',
+  'local',
+]);
+
+// Tokens at list price: cache reads and writes count as input, because the
+// question is what the work used, not what a discount made it cost.
+export const TokenTotalsSchema = z.strictObject({
+  provider: UsageProviderSchema,
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  // Model turns that reported usage.
+  turns: z.number().int().nonnegative(),
+});
+
 export const AgentTaskStateSchema = z.enum([
   'waiting',
   'working',
@@ -463,6 +481,8 @@ export const AgentTaskSchema = z
     state: AgentTaskStateSchema,
     // When work on it began (first move to working), for elapsed time.
     startedAt: z.iso.datetime().optional(),
+    // Tokens the task used, summed per model id across every run of it.
+    usage: z.record(z.string().min(1).max(120), TokenTotalsSchema).optional(),
     // Set when an approval was given for the rest of the task: later
     // permission requests run without asking and are logged as activity.
     trusted: z.boolean().optional(),

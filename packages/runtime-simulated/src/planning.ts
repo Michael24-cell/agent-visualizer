@@ -486,6 +486,13 @@ export type AgentStepIntent =
       target: string;
       summary?: string;
     }
+  | {
+      kind: 'usage';
+      modelId: string;
+      provider: 'anthropic' | 'openai' | 'groq' | 'local';
+      inputTokens: number;
+      outputTokens: number;
+    }
   | { kind: 'finish'; reason: string; alreadySaid?: boolean }
   | { kind: 'fail'; reason: string };
 

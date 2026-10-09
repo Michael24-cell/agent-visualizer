@@ -40,6 +40,7 @@ import {
   ProjectSchema,
   ProposalSchema,
   ProposalStateSchema,
+  UsageProviderSchema,
   RepositoryRefSchema,
   ThreadSchema,
   TrustPolicySchema,
@@ -230,6 +231,19 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
   ),
   projectEvent('output.produced', z.strictObject({ output: OutputSchema })),
   projectEvent('task.tool_used', z.strictObject({ activity: ActivitySchema })),
+  // One model turn's tokens. Reported per turn so a run that is stopped
+  // or crashes still keeps what it spent.
+  projectEvent(
+    'task.usage_reported',
+    z.strictObject({
+      taskId: TaskIdSchema,
+      agentId: AgentIdSchema,
+      modelId: z.string().min(1).max(120),
+      provider: UsageProviderSchema,
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+    }),
+  ),
 
   projectEvent('proposal.opened', z.strictObject({ proposal: ProposalSchema })),
   projectEvent(

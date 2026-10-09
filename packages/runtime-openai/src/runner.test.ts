@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import type { LiveTaskSink } from '@harness/runtime-claude';
 import type { AgentStepIntent } from '@harness/runtime-simulated';
 import { afterEach, describe, expect, it } from 'vitest';
-import { retryAfterMs, runOpenAiTask } from './runner.js';
+import { providerFor, retryAfterMs, runOpenAiTask } from './runner.js';
 import { LOCAL_AGENT_TOOLS_FULL } from './tools.js';
 import { insideFolder } from './tools.js';
 
@@ -763,5 +763,92 @@ describe('per-agent endpoint model', () => {
       },
     ).done;
     expect(sent).toBe('qwen/qwen3.8-27b');
+  });
+});
+
+describe('token usage', () => {
+  it('reports each turn the endpoint metered, before what the turn caused', async () => {
+    const cwd = project();
+    const usages = [
+      { prompt_tokens: 1_200, completion_tokens: 40 },
+      { prompt_tokens: 1_500, completion_tokens: 25 },
+    ];
+    let turn = 0;
+    const fetchFn: typeof fetch = async () => {
+      const reply =
+        turn === 0
+          ? {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_1',
+                  type: 'function',
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({ path: 'README.md' }),
+                  },
+                },
+              ],
+            }
+          : { content: 'Read it.' };
+      const usage = usages[turn];
+      turn += 1;
+      return new Response(
+        JSON.stringify({ choices: [{ message: reply }], usage }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    };
+    const { batches, sink } = collect();
+    await runOpenAiTask(input(cwd), sink, {
+      baseUrl: 'https://api.groq.com/openai/v1',
+      model: 'openai/gpt-oss-120b',
+      fetch: fetchFn,
+      tools: LOCAL_AGENT_TOOLS_FULL,
+    }).done;
+
+    const usage = batches.flat().filter((intent) => intent.kind === 'usage');
+    expect(usage).toEqual([
+      {
+        kind: 'usage',
+        modelId: 'openai/gpt-oss-120b',
+        provider: 'groq',
+        inputTokens: 1_200,
+        outputTokens: 40,
+      },
+      {
+        kind: 'usage',
+        modelId: 'openai/gpt-oss-120b',
+        provider: 'groq',
+        inputTokens: 1_500,
+        outputTokens: 25,
+      },
+    ]);
+    // The first turn's usage lands before the read it asked for.
+    const kinds = batches.flat().map((intent) => intent.kind);
+    expect(kinds.indexOf('usage')).toBeLessThan(kinds.indexOf('activity'));
+    expect(kinds.at(-1)).toBe('finish');
+  });
+
+  it('says nothing about usage when the endpoint does not meter it', async () => {
+    const cwd = project();
+    const { fetchFn } = server([{ content: 'Nothing to do.' }]);
+    const { batches, sink } = collect();
+    await runOpenAiTask(input(cwd), sink, {
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      model: 'llama3.2:3b',
+      fetch: fetchFn,
+      tools: LOCAL_AGENT_TOOLS_FULL,
+    }).done;
+    expect(batches.flat().some((intent) => intent.kind === 'usage')).toBe(
+      false,
+    );
+  });
+
+  it('knows a local endpoint from a hosted one', () => {
+    expect(providerFor('http://127.0.0.1:11434/v1')).toBe('local');
+    expect(providerFor('http://localhost:1234/v1')).toBe('local');
+    expect(providerFor('https://api.groq.com/openai/v1')).toBe('groq');
+    expect(providerFor('https://api.openai.com/v1')).toBe('openai');
+    expect(providerFor('not a url')).toBe('openai');
   });
 });

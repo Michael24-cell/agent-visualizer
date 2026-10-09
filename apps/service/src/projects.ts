@@ -2711,6 +2711,23 @@ export class ProjectService {
         batch.created('activities', activityId);
         return;
       }
+      case 'usage': {
+        // Nothing to say about a turn that used nothing.
+        if (intent.inputTokens === 0 && intent.outputTokens === 0) return;
+        batch.emit(
+          'task.usage_reported',
+          {
+            taskId: task.id,
+            agentId: agent.id,
+            modelId: intent.modelId.slice(0, 120),
+            provider: intent.provider,
+            inputTokens: Math.max(0, Math.round(intent.inputTokens)),
+            outputTokens: Math.max(0, Math.round(intent.outputTokens)),
+          },
+          meta,
+        );
+        return;
+      }
       case 'finish':
       case 'fail':
         batch.emit(

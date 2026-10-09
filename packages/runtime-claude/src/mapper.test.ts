@@ -249,3 +249,80 @@ describe('permissionAsk', () => {
     });
   });
 });
+
+describe('token usage', () => {
+  const result = (modelUsage: Record<string, object>): SDKMessage =>
+    ({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: 'Done.',
+      modelUsage,
+    }) as unknown as SDKMessage;
+
+  it('reports every model the query used, cache counted as input, before the finish', () => {
+    const mapper = new ClaudeMessageMapper();
+    const intents = mapper.map(
+      result({
+        'claude-sonnet-5': {
+          inputTokens: 2_000,
+          cacheReadInputTokens: 30_000,
+          cacheCreationInputTokens: 5_000,
+          outputTokens: 900,
+        },
+        'claude-haiku-4-5': {
+          inputTokens: 400,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          outputTokens: 60,
+        },
+      }),
+    );
+    expect(intents.slice(0, 2)).toEqual([
+      {
+        kind: 'usage',
+        modelId: 'claude-sonnet-5',
+        provider: 'anthropic',
+        inputTokens: 37_000,
+        outputTokens: 900,
+      },
+      {
+        kind: 'usage',
+        modelId: 'claude-haiku-4-5',
+        provider: 'anthropic',
+        inputTokens: 400,
+        outputTokens: 60,
+      },
+    ]);
+    expect(intents.at(-1)?.kind).toBe('finish');
+  });
+
+  it('reports only what is new when totals are cumulative across results', () => {
+    const mapper = new ClaudeMessageMapper();
+    mapper.map(
+      result({
+        'claude-opus-5': { inputTokens: 1_000, outputTokens: 100 },
+      }),
+    );
+    const second = mapper.map(
+      result({
+        'claude-opus-5': { inputTokens: 1_600, outputTokens: 180 },
+      }),
+    );
+    expect(second.filter((intent) => intent.kind === 'usage')).toEqual([
+      {
+        kind: 'usage',
+        modelId: 'claude-opus-5',
+        provider: 'anthropic',
+        inputTokens: 600,
+        outputTokens: 80,
+      },
+    ]);
+  });
+
+  it('reports nothing when the SDK gave no usage', () => {
+    expect(new ClaudeMessageMapper().map(success('Done.'))).toEqual([
+      { kind: 'finish', reason: 'Done.', alreadySaid: false },
+    ]);
+  });
+});

@@ -1298,6 +1298,33 @@ export function applyProjectEvent(
       break;
     }
 
+    case 'task.usage_reported': {
+      const { taskId, agentId, modelId, provider } = event.payload;
+      const task = requireTask(next, taskId);
+      if (task.agentId !== agentId) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Task ${task.id} belongs to another agent.`,
+        );
+      }
+      const before = task.usage?.[modelId];
+      next.tasks[task.id] = {
+        ...task,
+        usage: {
+          ...task.usage,
+          [modelId]: {
+            provider,
+            inputTokens: (before?.inputTokens ?? 0) + event.payload.inputTokens,
+            outputTokens:
+              (before?.outputTokens ?? 0) + event.payload.outputTokens,
+            turns: (before?.turns ?? 0) + 1,
+          },
+        },
+      };
+      targets.task(task.id);
+      break;
+    }
+
     case 'output.produced': {
       const output = event.payload.output;
       assertProject(next, output.projectId);
