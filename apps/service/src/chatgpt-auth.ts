@@ -102,10 +102,22 @@ function decodePart(part: string | undefined): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+// Messages can carry text from the callback URL (error_description), so
+// everything placed in the page is escaped.
+function escapeHtml(text: string): string {
+  return text.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        char
+      ]!,
+  );
+}
+
 const PAGE = (title: string, body: string) =>
-  `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
+  `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title>` +
   `<body style="font:15px system-ui;margin:15vh auto;max-width:28rem;padding:0 1rem">` +
-  `<h1 style="font-size:20px">${title}</h1><p>${body}</p>` +
+  `<h1 style="font-size:20px">${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p>` +
   // Drop the code from the address bar and history.
   `<script>history.replaceState(null,"","/auth/complete")</script>`;
 

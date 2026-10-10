@@ -238,6 +238,18 @@ describe('Sign in with ChatGPT', () => {
     });
   });
 
+  it('never echoes callback text into the page as markup', async () => {
+    const server = openai({});
+    const chatgpt = auth(folder(), server.fetchFn);
+    const page = await consent(await chatgpt.startSignIn(), server, {
+      error: 'server_error',
+      error_description: '<script>alert(1)</script>',
+    });
+    const html = await page.text();
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
   it('reports a cancelled consent without exchanging anything', async () => {
     const server = openai({});
     const chatgpt = auth(folder(), server.fetchFn);
