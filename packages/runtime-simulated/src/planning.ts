@@ -489,7 +489,7 @@ export type AgentStepIntent =
   | {
       kind: 'usage';
       modelId: string;
-      provider: 'anthropic' | 'openai' | 'groq' | 'local';
+      provider: 'anthropic' | 'openai' | 'groq' | 'local' | 'chatgpt';
       inputTokens: number;
       outputTokens: number;
     }

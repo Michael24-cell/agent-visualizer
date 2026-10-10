@@ -95,7 +95,7 @@ export const RuntimeInfoSchema = z.strictObject({
   mode: z.enum(['simulated', 'live']),
   // Which live runtime: Claude via the Agent SDK, or any OpenAI-compatible
   // endpoint (Ollama locally, hosted APIs). Absent when simulated.
-  provider: z.enum(['claude', 'openai']).optional(),
+  provider: z.enum(['claude', 'openai', 'chatgpt']).optional(),
   // The model name for openai runtimes, where every agent shares one.
   model: z.string().min(1).optional(),
 });
@@ -249,19 +249,33 @@ export const MessagesPageSchema = z.strictObject({
 
 // Runtime settings as the setup panel sees and changes them. The key is
 // never returned, only whether one is set.
+// Whether this machine is signed in with ChatGPT for plan usage. Tokens
+// never leave the service; only who is signed in.
+export const ChatGptStatusSchema = z.strictObject({
+  signedIn: z.boolean(),
+  email: z.string().min(1).optional(),
+  // A sign-in was started and the browser has not come back yet.
+  pending: z.boolean(),
+  // The last sign-in or refresh failure, in words a person can act on.
+  error: z.string().min(1).optional(),
+});
+
 export const RuntimeSettingsSchema = z.strictObject({
-  kind: z.enum(['simulated', 'claude', 'openai']),
+  kind: z.enum(['simulated', 'claude', 'openai', 'chatgpt']),
   baseUrl: z.string().url().optional(),
   model: z.string().min(1).optional(),
   tools: z.enum(['basic', 'full']).optional(),
   keyPresent: z.boolean(),
   claudeKeyPresent: z.boolean(),
+  chatgpt: ChatGptStatusSchema.extend({
+    model: z.string().min(1),
+  }),
   // Where settings are saved for next start; absent when not writable.
   envFile: z.string().min(1).optional(),
 });
 
 export const RuntimeUpdateSchema = z.strictObject({
-  kind: z.enum(['simulated', 'claude', 'openai']),
+  kind: z.enum(['simulated', 'claude', 'openai', 'chatgpt']),
   baseUrl: z.string().url().optional(),
   model: z.string().min(1).optional(),
   tools: z.enum(['basic', 'full']).optional(),
@@ -298,6 +312,7 @@ export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;
 export type RuntimeInfo = z.infer<typeof RuntimeInfoSchema>;
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 export type RuntimeSettings = z.infer<typeof RuntimeSettingsSchema>;
+export type ChatGptStatus = z.infer<typeof ChatGptStatusSchema>;
 export type RuntimeUpdate = z.infer<typeof RuntimeUpdateSchema>;
 export type AttachRepositoryCommand = z.infer<
   typeof AttachRepositoryCommandSchema

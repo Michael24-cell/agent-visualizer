@@ -852,3 +852,109 @@ describe('token usage', () => {
     expect(providerFor('not a url')).toBe('openai');
   });
 });
+
+describe('on the ChatGPT plan (Responses API)', () => {
+  it('runs a tool turn over /responses with a fresh token each request', async () => {
+    const cwd = project();
+    const seen: {
+      url: string;
+      auth: string | null;
+      body: Record<string, unknown>;
+    }[] = [];
+    let turn = 0;
+    const sse = (value: object) =>
+      new Response(`data: ${JSON.stringify(value)}\n\n`, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    const fetchFn: typeof fetch = async (url, init) => {
+      seen.push({
+        url: String(url),
+        auth: new Headers(init?.headers).get('authorization'),
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      });
+      turn += 1;
+      return sse({
+        type: 'response.completed',
+        response:
+          turn === 1
+            ? {
+                output: [
+                  {
+                    type: 'function_call',
+                    call_id: 'call_a',
+                    name: 'read_file',
+                    arguments: JSON.stringify({ path: 'README.md' }),
+                  },
+                ],
+                usage: { input_tokens: 800, output_tokens: 20 },
+              }
+            : {
+                output: [
+                  {
+                    type: 'message',
+                    content: [{ type: 'output_text', text: 'It is a demo.' }],
+                  },
+                ],
+                usage: { input_tokens: 950, output_tokens: 12 },
+              },
+      });
+    };
+    let issued = 0;
+    const { batches, sink } = collect();
+    await runOpenAiTask(input(cwd), sink, {
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-6.1-sol',
+      transport: 'responses',
+      accessToken: async () => `token-${(issued += 1)}`,
+      usageProvider: 'chatgpt',
+      fetch: fetchFn,
+      tools: LOCAL_AGENT_TOOLS_FULL,
+    }).done;
+
+    // Every request goes to /responses with a token fetched for it. (A
+    // read-only answer is nudged before it may finish, so there are more
+    // than two turns.)
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(
+      seen.every(
+        (request) => request.url === 'https://api.openai.com/v1/responses',
+      ),
+    ).toBe(true);
+    expect(seen.map((request) => request.auth)).toEqual(
+      seen.map((_, index) => `Bearer token-${index + 1}`),
+    );
+    expect(seen[0]!.body).toMatchObject({ store: false, stream: true });
+    // The second turn carries the call and its result back.
+    expect(seen[1]!.body.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'function_call', call_id: 'call_a' }),
+        expect.objectContaining({
+          type: 'function_call_output',
+          call_id: 'call_a',
+          output: expect.stringContaining('# Demo'),
+        }),
+      ]),
+    );
+    const intents = batches.flat();
+    const usage = intents.filter((intent) => intent.kind === 'usage');
+    // One report per metered turn, all billed to the plan.
+    expect(usage).toHaveLength(seen.length);
+    expect(usage[0]).toEqual({
+      kind: 'usage',
+      modelId: 'gpt-6.1-sol',
+      provider: 'chatgpt',
+      inputTokens: 800,
+      outputTokens: 20,
+    });
+    expect(
+      usage.every(
+        (intent) => intent.kind === 'usage' && intent.provider === 'chatgpt',
+      ),
+    ).toBe(true);
+    expect(intents.at(-1)).toMatchObject({
+      kind: 'finish',
+      reason: 'It is a demo.',
+    });
+  });
+});

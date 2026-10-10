@@ -1,4 +1,9 @@
 import {
+  readResponseStream,
+  responsesBody,
+  responsesHttpError,
+} from './responses.js';
+import {
   permissionAsk,
   type LiveTask,
   type LiveTaskInput,
@@ -32,6 +37,14 @@ export interface OpenAiRuntimeOptions {
   readonly fetch?: typeof fetch | undefined;
   readonly sleep?: ((ms: number) => Promise<void>) | undefined;
   readonly tools?: readonly ToolDefinition[] | undefined;
+  // 'responses' speaks /v1/responses (required for ChatGPT plan usage);
+  // the default is /v1/chat/completions.
+  readonly transport?: 'chat' | 'responses' | undefined;
+  // A fresh bearer token per request, for credentials that expire (the
+  // ChatGPT sign-in's access token lasts an hour). Wins over apiKey.
+  readonly accessToken?: (() => Promise<string>) | undefined;
+  // Who to bill usage to when the endpoint alone cannot say.
+  readonly usageProvider?: 'openai' | 'groq' | 'local' | 'chatgpt' | undefined;
 }
 
 interface ToolCall {
@@ -161,32 +174,38 @@ async function complete(
   const timeoutMs = options.turnTimeoutMs ?? 180_000;
   const timeout = AbortSignal.timeout(timeoutMs);
   const combined = AbortSignal.any([signal, timeout]);
+  const bearer = options.accessToken
+    ? await options.accessToken()
+    : options.apiKey;
+  const viaResponses = options.transport === 'responses';
   const response = await doFetch(
-    `${options.baseUrl.replace(/\/$/, '')}/chat/completions`,
+    `${options.baseUrl.replace(/\/$/, '')}/${viaResponses ? 'responses' : 'chat/completions'}`,
     {
       method: 'POST',
       signal: combined,
       headers: {
         'content-type': 'application/json',
-        ...(options.apiKey
-          ? { authorization: `Bearer ${options.apiKey}` }
-          : {}),
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
       },
-      body: JSON.stringify({
-        model: options.model,
-        messages,
-        tools: tools.map((tool) => ({
-          type: 'function',
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        })),
-        temperature: 0.2,
-        max_tokens: options.maxOutputTokens ?? 2_048,
-        stream: false,
-      }),
+      body: JSON.stringify(
+        viaResponses
+          ? responsesBody(options.model, messages, tools)
+          : {
+              model: options.model,
+              messages,
+              tools: tools.map((tool) => ({
+                type: 'function',
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+              temperature: 0.2,
+              max_tokens: options.maxOutputTokens ?? 2_048,
+              stream: false,
+            },
+      ),
     },
   ).catch((error: unknown) => {
     if (timeout.aborted) {
@@ -203,6 +222,12 @@ async function complete(
     const wait = retryAfterMs(response.headers.get('retry-after'), body);
     await (options.sleep ?? defaultSleep)(wait);
     return complete(options, messages, tools, signal, attempt + 1);
+  }
+  if (viaResponses) {
+    if (!response.ok) throw await responsesHttpError(response);
+    if (!response.body) throw new Error('ChatGPT sent an empty response.');
+    const reply = await readResponseStream(response.body);
+    return { message: reply.message, usage: reply.usage };
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -236,7 +261,7 @@ export function runOpenAiTask(
     ...(input.documents ? documentTools(input.documents) : []),
   ];
   const maxTurns = options.maxTurns ?? 30;
-  const provider = providerFor(options.baseUrl);
+  const provider = options.usageProvider ?? providerFor(options.baseUrl);
   let stopped = false;
 
   const emit = (intents: AgentStepIntent[]): boolean => {

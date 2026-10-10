@@ -112,11 +112,23 @@ export const LOCAL_RATE: ModelRate = {
 // Ids arrive in several spellings: dated snapshots
 // (claude-haiku-4-5-20251001), provider-prefixed (anthropic/claude-opus-5),
 // or Ollama tags (llama3.2:3b). Try them in order of how specific they are.
+// Work run through Sign in with ChatGPT counts against the plan's
+// allowance; there is no per-token bill to show.
+export const CHATGPT_PLAN_RATE: ModelRate = {
+  provider: 'chatgpt',
+  label: 'ChatGPT plan',
+  input: 0,
+  output: 0,
+  source: 'none',
+  note: 'Counts against your ChatGPT plan, not billed per token.',
+};
+
 export function rateFor(
   modelId: string,
   provider?: RateProvider,
 ): ModelRate | undefined {
   if (provider === 'local') return LOCAL_RATE;
+  if (provider === 'chatgpt') return CHATGPT_PLAN_RATE;
   const id = modelId.trim().toLowerCase();
   const undated = id.replace(/-\d{8}$/, '');
   const bare = undated.includes('/') ? undated.split('/').pop()! : undated;
@@ -154,6 +166,7 @@ export function formatUsd(amount: number): string {
 // "$1 / $5 per M" — what the model picker shows beside a model's name.
 export function formatRate(rate: ModelRate): string {
   if (rate.provider === 'local') return 'free · local';
+  if (rate.provider === 'chatgpt') return 'ChatGPT plan';
   const n = (value: number) =>
     value < 1
       ? `$${value}`

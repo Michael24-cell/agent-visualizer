@@ -251,9 +251,11 @@ function ModelSelect({
   ) => void;
 }) {
   const provider = project.runtime.provider;
+  // One endpoint, many models: an open endpoint or the ChatGPT plan.
+  const byEndpoint = provider === 'openai' || provider === 'chatgpt';
   const [models, setModels] = useState<string[]>();
   useEffect(() => {
-    if (provider !== 'openai') return;
+    if (!byEndpoint) return;
     let active = true;
     void listRuntimeModels()
       .then((list) => {
@@ -265,9 +267,9 @@ function ModelSelect({
     return () => {
       active = false;
     };
-  }, [provider]);
+  }, [byEndpoint]);
 
-  if (provider === 'openai') {
+  if (byEndpoint) {
     const current = agent.endpointModel ?? project.runtime.model ?? '';
     const options = [...new Set([current, ...(models ?? [])])].filter(Boolean);
     return (

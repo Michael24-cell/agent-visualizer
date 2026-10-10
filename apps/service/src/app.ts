@@ -50,6 +50,11 @@ import {
   runOpenAiTask,
 } from '@harness/runtime-openai';
 import { runLiveTask } from '@harness/runtime-claude';
+import {
+  CHATGPT_RESOURCE,
+  ChatGptAuth,
+  ChatGptAuthError,
+} from './chatgpt-auth.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { registerProjectRoutes } from './project-routes.js';
 import { ProjectService, type TaskRunner } from './projects.js';
@@ -62,15 +67,33 @@ const StartSimulatedRunSchema = z.strictObject({
 });
 
 // The runtime the service reports and the runner that executes tasks.
-function runtimeOptions(runtime: RuntimeConfig): {
+function runtimeOptions(
+  runtime: RuntimeConfig,
+  chatgpt: ChatGptAuth,
+): {
   runtime: {
     mode: 'simulated' | 'live';
-    provider?: 'claude' | 'openai';
+    provider?: 'claude' | 'openai' | 'chatgpt';
     model?: string;
   };
   runner?: TaskRunner;
 } {
   switch (runtime.kind) {
+    case 'chatgpt':
+      // The signed-in ChatGPT plan, through the Responses API it requires.
+      // Each request asks for a token so hourly expiry is handled inside.
+      return {
+        runtime: { mode: 'live', provider: 'chatgpt', model: runtime.model },
+        runner: (input, sink) =>
+          runOpenAiTask(input, sink, {
+            baseUrl: CHATGPT_RESOURCE,
+            model: runtime.model,
+            transport: 'responses',
+            accessToken: () => chatgpt.accessToken(),
+            usageProvider: 'chatgpt',
+            tools: LOCAL_AGENT_TOOLS_FULL,
+          }),
+      };
     case 'claude':
       return {
         runtime: { mode: 'live', provider: 'claude' },
@@ -146,13 +169,15 @@ export function createService(config: AppConfig) {
   eventStore.rebuildAllProjections();
   const projectStore = new SqliteProjectStore(store.database);
   projectStore.rebuildAllProjections();
+  const chatgpt = new ChatGptAuth({ dataDirectory: config.dataDirectory });
+  let chatgptModel = config.chatgptModel ?? 'gpt-6.1-sol';
   const projects = new ProjectService(projectStore, {
     folders: config.folderRoot ? { root: config.folderRoot } : {},
     replies:
       config.replyDelayMs === undefined
         ? { mode: 'inline' }
         : { mode: 'deferred', delayMs: config.replyDelayMs },
-    ...runtimeOptions(config.runtime),
+    ...runtimeOptions(config.runtime, chatgpt),
   });
   // Runtime settings can change while running; this is the current one.
   let currentRuntime: RuntimeConfig = config.runtime;
@@ -431,7 +456,16 @@ export function createService(config: AppConfig) {
         code: 'invalid_transition',
       });
     }
-    if (body.kind === 'openai') {
+    if (body.kind === 'chatgpt' && !chatgpt.signedIn) {
+      return reply.code(409).send({
+        error: 'Sign in with ChatGPT first, then choose it as the runtime.',
+        code: 'invalid_transition',
+      });
+    }
+    if (body.kind === 'chatgpt') {
+      chatgptModel = body.model ?? chatgptModel;
+      currentRuntime = { kind: 'chatgpt', model: chatgptModel };
+    } else if (body.kind === 'openai') {
       local = {
         baseUrl: body.baseUrl ?? local.baseUrl,
         model: body.model ?? local.model,
@@ -442,13 +476,16 @@ export function createService(config: AppConfig) {
     } else {
       currentRuntime = { kind: body.kind };
     }
-    const options = runtimeOptions(currentRuntime);
+    const options = runtimeOptions(currentRuntime, chatgpt);
     projects.setRuntime(options.runtime, options.runner);
     if (config.envFile) {
       try {
         saveEnvFile(config.envFile, {
           HARNESS_RUNTIME:
             currentRuntime.kind === 'openai' ? 'local' : currentRuntime.kind,
+          ...(currentRuntime.kind === 'chatgpt'
+            ? { HARNESS_CHATGPT_MODEL: chatgptModel }
+            : {}),
           ...(currentRuntime.kind === 'openai'
             ? {
                 HARNESS_LOCAL_BASE_URL: local.baseUrl,
@@ -473,11 +510,68 @@ export function createService(config: AppConfig) {
       tools: local.tools,
       keyPresent: Boolean(local.apiKey),
       claudeKeyPresent,
+      chatgpt: { ...chatgpt.status(), model: chatgptModel },
       ...(config.envFile ? { envFile: config.envFile } : {}),
     };
   }
 
+  // Sign in with ChatGPT. The browser opens the returned URL; the service
+  // listens on 127.0.0.1 for the callback and keeps the tokens itself.
+  service.get('/api/chatgpt', async () => chatgpt.status());
+
+  service.post('/api/chatgpt/sign-in', async (_request, reply) => {
+    try {
+      return { url: await chatgpt.startSignIn() };
+    } catch (error) {
+      return reply.code(503).send({
+        error:
+          error instanceof Error
+            ? error.message
+            : 'The sign-in could not start.',
+        code: 'invalid_command',
+      });
+    }
+  });
+
+  service.post('/api/chatgpt/sign-out', async () => {
+    await chatgpt.signOut();
+    if (currentRuntime.kind === 'chatgpt') {
+      // Nothing left to run on: fall back to the simulator, honestly.
+      currentRuntime = { kind: 'simulated' };
+      const options = runtimeOptions(currentRuntime, chatgpt);
+      projects.setRuntime(options.runtime, options.runner);
+    }
+    return RuntimeSettingsSchema.parse(describeRuntime());
+  });
+
+  service.get('/api/chatgpt/models', async (_request, reply) => {
+    try {
+      return { configured: chatgptModel, models: await chatgpt.listModels() };
+    } catch (error) {
+      return reply.code(error instanceof ChatGptAuthError ? 409 : 502).send({
+        error: error instanceof Error ? error.message : String(error),
+        code: 'invalid_command',
+      });
+    }
+  });
+
   service.get('/api/runtime/models', async (_request, reply) => {
+    // On the ChatGPT plan the picker beside Send lists the plan's models.
+    if (currentRuntime.kind === 'chatgpt') {
+      try {
+        const models = await chatgpt.listModels();
+        return {
+          runtime: 'chatgpt',
+          configured: chatgptModel,
+          models: models.map((model) => model.slug).sort(),
+        };
+      } catch (error) {
+        return reply.code(502).send({
+          error: error instanceof Error ? error.message : String(error),
+          code: 'invalid_command',
+        });
+      }
+    }
     const runtime =
       currentRuntime.kind === 'openai'
         ? currentRuntime
@@ -516,6 +610,7 @@ export function createService(config: AppConfig) {
   });
 
   service.addHook('onClose', async () => {
+    chatgpt.close();
     projects.stopAll();
     await projects.whenIdle();
     store.close();

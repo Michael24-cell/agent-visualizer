@@ -64,6 +64,8 @@ export function briefNote(project: ProjectResponse): string {
 // What the header badge and hints call the runtime.
 export function runtimeLabel(runtime: ProjectResponse['runtime']): string {
   if (runtime.mode !== 'live') return 'Simulated';
+  if (runtime.provider === 'chatgpt')
+    return `ChatGPT · ${runtime.model ?? 'plan'}`;
   if (runtime.provider === 'openai') return runtime.model ?? 'Local model';
   return 'Claude';
 }
@@ -71,6 +73,9 @@ export function runtimeLabel(runtime: ProjectResponse['runtime']): string {
 export function runtimeNote(runtime: ProjectResponse['runtime']): string {
   if (runtime.mode !== 'live') {
     return 'Agents are simulated. Set ANTHROPIC_API_KEY for Claude, or HARNESS_RUNTIME=local for a local model.';
+  }
+  if (runtime.provider === 'chatgpt') {
+    return `Agents run on ${runtime.model ?? 'your ChatGPT model'} through your ChatGPT plan — no API key; it counts against your plan's usage.`;
   }
   if (runtime.provider === 'openai') {
     return `Agents run on ${runtime.model ?? 'a local model'} through your OpenAI-compatible endpoint.`;

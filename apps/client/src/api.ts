@@ -16,6 +16,8 @@ import {
   type RuntimeUpdate,
   type TrustPolicy,
   RuntimeSettingsSchema,
+  ChatGptStatusSchema,
+  type ChatGptStatus,
   type CommandResponse,
   type FolderListing,
   type MessagesPage,
@@ -463,6 +465,39 @@ export async function updateRuntime(
       })
     ).json(),
   );
+}
+
+// Sign in with ChatGPT. The service returns the authorize URL and keeps
+// every token itself; the client only ever sees who is signed in.
+export async function readChatGpt(): Promise<ChatGptStatus> {
+  return ChatGptStatusSchema.parse(
+    await (await request('/api/chatgpt')).json(),
+  );
+}
+
+export async function startChatGptSignIn(): Promise<string> {
+  const body = (await (
+    await request('/api/chatgpt/sign-in', { method: 'POST' })
+  ).json()) as { url?: string };
+  if (!body.url?.startsWith('https://auth.openai.com/')) {
+    throw new Error('The sign-in address was not from OpenAI.');
+  }
+  return body.url;
+}
+
+export async function signOutChatGpt(): Promise<RuntimeSettings> {
+  return RuntimeSettingsSchema.parse(
+    await (await request('/api/chatgpt/sign-out', { method: 'POST' })).json(),
+  );
+}
+
+export async function listChatGptModels(): Promise<
+  { slug: string; displayName: string }[]
+> {
+  const body = (await (await request('/api/chatgpt/models')).json()) as {
+    models?: { slug: string; displayName: string }[];
+  };
+  return body.models ?? [];
 }
 
 export async function listRuntimeModels(): Promise<string[]> {

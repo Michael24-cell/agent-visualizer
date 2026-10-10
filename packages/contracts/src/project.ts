@@ -399,6 +399,8 @@ export const UsageProviderSchema = z.enum([
   'openai',
   'groq',
   'local',
+  // Requests that count against a signed-in ChatGPT plan, not per token.
+  'chatgpt',
 ]);
 
 // Tokens at list price: cache reads and writes count as input, because the

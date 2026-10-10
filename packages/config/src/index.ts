@@ -25,9 +25,12 @@ const EnvironmentSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   // 'auto' runs on Claude when a key is present, otherwise the simulator.
   // 'local' runs on an OpenAI-compatible endpoint such as Ollama.
+  // 'chatgpt' runs on the signed-in ChatGPT plan (Sign in with ChatGPT).
   HARNESS_RUNTIME: z
-    .enum(['auto', 'simulated', 'claude', 'live', 'local'])
+    .enum(['auto', 'simulated', 'claude', 'live', 'local', 'chatgpt'])
     .default('auto'),
+  // gpt-6.1-sol is the model OpenAI's plan-usage examples use.
+  HARNESS_CHATGPT_MODEL: z.string().min(1).default('gpt-6.1-sol'),
   HARNESS_LOCAL_BASE_URL: z.string().url().default('http://127.0.0.1:11434/v1'),
   HARNESS_LOCAL_API_KEY: z.string().min(1).optional(),
   HARNESS_LOCAL_MODEL: z.string().min(1).default('qwen2.5-coder:7b'),
@@ -53,6 +56,8 @@ export interface AppConfig {
   readonly runtime: RuntimeConfig;
   // Whether ANTHROPIC_API_KEY is set (the value is never copied here).
   readonly claudeKeyPresent: boolean;
+  // The model for ChatGPT plan runs, even when not selected.
+  readonly chatgptModel?: string | undefined;
   // Defaults for the OpenAI-compatible runtime even when not selected.
   readonly local: {
     readonly baseUrl: string;
@@ -67,6 +72,7 @@ export interface AppConfig {
 export type RuntimeConfig =
   | { readonly kind: 'simulated' }
   | { readonly kind: 'claude' }
+  | { readonly kind: 'chatgpt'; readonly model: string }
   | {
       readonly kind: 'openai';
       readonly baseUrl: string;
@@ -129,6 +135,7 @@ export function loadAppConfig(
     replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
     runtime: runtimeFrom(environment),
     claudeKeyPresent: Boolean(environment.ANTHROPIC_API_KEY),
+    chatgptModel: environment.HARNESS_CHATGPT_MODEL,
     local: {
       baseUrl: environment.HARNESS_LOCAL_BASE_URL,
       apiKey: environment.HARNESS_LOCAL_API_KEY,
@@ -148,6 +155,8 @@ function runtimeFrom(
     case 'claude':
     case 'live':
       return { kind: 'claude' };
+    case 'chatgpt':
+      return { kind: 'chatgpt', model: environment.HARNESS_CHATGPT_MODEL };
     case 'local':
       return {
         kind: 'openai',
