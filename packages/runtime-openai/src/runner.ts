@@ -279,7 +279,9 @@ export function runOpenAiTask(
   const readPaths = new Set<string>();
   let changedFiles = 0;
   let commandsRun = 0;
-  let planEdits = 0;
+  // Any tool call at all, reads included: a model that read files and
+  // then answered has done what a question asks, and must not be pushed.
+  let toolCalls = 0;
   let nudges = 0;
 
   const done = (async () => {
@@ -344,12 +346,11 @@ export function runOpenAiTask(
         if (text && calls.length > 0 && !emit([{ kind: 'say', body: text }]))
           return;
         if (calls.length === 0 && nudges < 2) {
-          const nothingHappened =
-            changedFiles === 0 && commandsRun === 0 && planEdits === 0;
+          const nothingHappened = toolCalls === 0;
           const promisedMore = PROMISES_MORE.test(text);
           if (nothingHappened || promisedMore) {
-            // The model drifted into prose (nothing changed and nothing
-            // ran) or announced its next step and stopped. Ask it to act.
+            // The model answered without touching a tool at all, or
+            // announced its next step and stopped. Ask it to act.
             nudges += 1;
             messages.push({
               role: 'user',
@@ -370,6 +371,7 @@ export function runOpenAiTask(
         }
         for (const call of calls) {
           if (stopped) return;
+          toolCalls += 1;
           const tool = tools.find(
             (candidate) => candidate.name === call.function.name,
           );
@@ -408,13 +410,6 @@ export function runOpenAiTask(
                 readPaths.add(args.path);
               }
               if (tool.sdkName === 'Bash') commandsRun += 1;
-              if (
-                (tool.name === 'update_plan_section' ||
-                  tool.name === 'update_method_section') &&
-                !result.isError
-              ) {
-                planEdits += 1;
-              }
               if (
                 (tool.sdkName === 'Edit' || tool.sdkName === 'Write') &&
                 !result.isError

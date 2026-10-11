@@ -334,6 +334,37 @@ describe('nudging', () => {
   });
 });
 
+describe('answering a question', () => {
+  it('lets a model that read files and then answered finish, without a push', async () => {
+    const cwd = project();
+    const { fetchFn, requests } = server([
+      { tool_calls: [{ name: 'read_file', args: { path: 'README.md' } }] },
+      { content: 'This folder is a small demo with one source file.' },
+    ]);
+    const seen = collect();
+    await runOpenAiTask(input(cwd), seen.sink, {
+      baseUrl: 'http://fake/v1',
+      model: 'm',
+      fetch: fetchFn,
+    }).done;
+    // Two model turns: the read and the answer. No nudge in between.
+    expect(requests).toHaveLength(2);
+    expect(
+      requests[1]!.messages.some(
+        (message) =>
+          message.role === 'user' &&
+          /not called a tool/.test(message.content ?? ''),
+      ),
+    ).toBe(false);
+    expect(seen.batches.at(-1)).toEqual([
+      {
+        kind: 'finish',
+        reason: 'This folder is a small demo with one source file.',
+      },
+    ]);
+  });
+});
+
 describe('promised work', () => {
   it('nudges a model that announces a next step and stops', async () => {
     const cwd = project();
@@ -912,10 +943,9 @@ describe('on the ChatGPT plan (Responses API)', () => {
       tools: LOCAL_AGENT_TOOLS_FULL,
     }).done;
 
-    // Every request goes to /responses with a token fetched for it. (A
-    // read-only answer is nudged before it may finish, so there are more
-    // than two turns.)
-    expect(seen.length).toBeGreaterThanOrEqual(2);
+    // Two turns, the read and the answer, each to /responses with a token
+    // fetched for it.
+    expect(seen).toHaveLength(2);
     expect(
       seen.every(
         (request) => request.url === 'https://api.openai.com/v1/responses',
