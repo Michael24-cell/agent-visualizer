@@ -410,6 +410,28 @@ export class ProjectService {
 
   // --- Reads ---------------------------------------------------------------
 
+  // The attached folder, for read-only review, and the files the agents
+  // changed in it (so findings about their work can come first).
+  reviewTarget(projectId: ProjectId): {
+    root: string;
+    touched: Set<string>;
+  } {
+    const projection = this.requireProjection(projectId);
+    const repository = projection.project.repository;
+    if (!repository) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'Attach a folder to review its code.',
+      );
+    }
+    const touched = new Set(
+      Object.values(projection.outputs)
+        .map((output) => output.location)
+        .filter((location): location is string => Boolean(location)),
+    );
+    return { root: repository.path, touched };
+  }
+
   // The absolute path of a file inside the attached folder, or an error.
   resolveProjectFile(projectId: ProjectId, path: string): string {
     const projection = this.requireProjection(projectId);

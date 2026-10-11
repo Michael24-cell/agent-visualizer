@@ -1,15 +1,20 @@
 // A small line diff for showing what a write changed. Unified-style text:
-// context lines start with a space, removals with '-', additions with '+'.
-// Big inputs get a summary instead of a quadratic diff.
+// each run of changes opens with an '@@ -old +new @@' header giving the
+// line it starts at in each version, then context lines start with a
+// space, removals with '-', additions with '+'. Big inputs get a summary
+// instead of a quadratic diff.
 
 const MAX_LINES = 3_000;
 const CONTEXT = 2;
 
 export function lineDiff(before: string, after: string): string {
   if (before === after) return '';
-  // A trailing newline is not a line of its own.
-  const a = before.replace(/\n$/, '').split('\n');
-  const b = after.replace(/\n$/, '').split('\n');
+  // A trailing newline is not a line of its own, and an empty file has
+  // no lines at all.
+  const lines = (text: string) =>
+    text === '' ? [] : text.replace(/\n$/, '').split('\n');
+  const a = lines(before);
+  const b = lines(after);
   if (a.length > MAX_LINES || b.length > MAX_LINES) {
     return `(diff too large: ${a.length} → ${b.length} lines)`;
   }
@@ -26,25 +31,39 @@ export function lineDiff(before: string, after: string): string {
           : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
     }
   }
-  // Walk it into ops.
-  const ops: { kind: ' ' | '-' | '+'; text: string }[] = [];
+  // Walk it into ops, remembering where each sits in both versions
+  // (1-based: the line it is, or the line it would come before).
+  const ops: {
+    kind: ' ' | '-' | '+';
+    text: string;
+    old: number;
+    new: number;
+  }[] = [];
   let i = 0;
   let j = 0;
+  const push = (kind: ' ' | '-' | '+', text: string) =>
+    ops.push({ kind, text, old: i + 1, new: j + 1 });
   while (i < n && j < m) {
     if (a[i] === b[j]) {
-      ops.push({ kind: ' ', text: a[i]! });
+      push(' ', a[i]!);
       i += 1;
       j += 1;
     } else if (table[i + 1]![j]! >= table[i]![j + 1]!) {
-      ops.push({ kind: '-', text: a[i]! });
+      push('-', a[i]!);
       i += 1;
     } else {
-      ops.push({ kind: '+', text: b[j]! });
+      push('+', b[j]!);
       j += 1;
     }
   }
-  while (i < n) ops.push({ kind: '-', text: a[i++]! });
-  while (j < m) ops.push({ kind: '+', text: b[j++]! });
+  while (i < n) {
+    push('-', a[i]!);
+    i += 1;
+  }
+  while (j < m) {
+    push('+', b[j]!);
+    j += 1;
+  }
   // Keep only changes with a little context, separated by '…'.
   const keep = new Set<number>();
   ops.forEach((op, index) => {
@@ -61,8 +80,11 @@ export function lineDiff(before: string, after: string): string {
   let last = -1;
   for (let index = 0; index < ops.length; index += 1) {
     if (!keep.has(index)) continue;
-    if (last >= 0 && index > last + 1) out.push('…');
-    out.push(`${ops[index]!.kind}${ops[index]!.text}`);
+    const op = ops[index]!;
+    if (index !== last + 1 || last < 0) {
+      out.push(`@@ -${op.old} +${op.new} @@`);
+    }
+    out.push(`${op.kind}${op.text}`);
     last = index;
   }
   return out.join('\n');

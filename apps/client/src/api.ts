@@ -552,3 +552,95 @@ export async function readEvents(
     ).json(),
   );
 }
+
+// Every event, page by page, for views that walk the whole log.
+export async function readAllEvents(
+  projectId: string,
+): Promise<ProjectEventsPage['events']> {
+  const events: ProjectEventsPage['events'] = [];
+  let after = 0;
+  for (let page = 0; page < 50; page += 1) {
+    const next = await readEvents(projectId, after);
+    events.push(...next.events);
+    if (!next.events.length || next.cursor <= after) break;
+    after = next.cursor;
+  }
+  return events;
+}
+
+// Review reads of the attached folder. Shapes are the service's own and
+// only ever displayed, so they are typed here rather than validated.
+export interface SimilarFunction {
+  readonly name: string;
+  readonly path: string;
+  readonly startLine: number;
+  readonly endLine: number;
+}
+
+export interface SimilarPair {
+  readonly kind: 'identical' | 'renamed' | 'near';
+  readonly similarity: number;
+  readonly a: SimilarFunction;
+  readonly b: SimilarFunction;
+  readonly diff: string;
+  readonly differingLines: number;
+  readonly touched: boolean;
+  readonly inTests: boolean;
+}
+
+export async function readSimilarCode(projectId: string): Promise<{
+  pairs: SimilarPair[];
+  files: number;
+  functions: number;
+  truncated: boolean;
+}> {
+  return (await (
+    await request(`/api/projects/${projectId}/review/similar`)
+  ).json()) as {
+    pairs: SimilarPair[];
+    files: number;
+    functions: number;
+    truncated: boolean;
+  };
+}
+
+export interface CommitSummary {
+  readonly sha: string;
+  readonly short: string;
+  readonly author: string;
+  readonly at: string;
+  readonly subject: string;
+  readonly files: readonly string[];
+}
+
+export interface CommitFile {
+  readonly path: string;
+  readonly diff: string;
+  readonly added: number;
+  readonly removed: number;
+}
+
+export async function readCommits(projectId: string): Promise<{
+  available: boolean;
+  commits: CommitSummary[];
+  reason?: string;
+}> {
+  return (await (
+    await request(`/api/projects/${projectId}/review/commits`)
+  ).json()) as {
+    available: boolean;
+    commits: CommitSummary[];
+    reason?: string;
+  };
+}
+
+export async function readCommitDiff(
+  projectId: string,
+  sha: string,
+): Promise<{ sha: string; files: CommitFile[] }> {
+  return (await (
+    await request(
+      `/api/projects/${projectId}/review/commits/${encodeURIComponent(sha)}`,
+    )
+  ).json()) as { sha: string; files: CommitFile[] };
+}

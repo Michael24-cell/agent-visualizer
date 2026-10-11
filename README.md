@@ -15,7 +15,7 @@ cp .env.example .env # optional
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. The client proxies `/api` requests to the loopback-only service at `http://127.0.0.1:4317`. The root development command creates an unguessable per-launch session token and shares it with the service and development proxy without exposing it to client code. Browser origins are checked at the service boundary.
+Open `http://127.0.0.1:5173`. The client proxies `/api` requests to the loopback-only service at `http://127.0.0.1:4317` (set `HARNESS_PORT` in `.env.local` if another program already uses that port; the proxy follows it). The root development command creates an unguessable per-launch session token and shares it with the service and development proxy without exposing it to client code. Browser origins are checked at the service boundary.
 
 Local state is stored outside the repository in the operating system's user-data directory. Override it with an absolute `HARNESS_DATA_DIR` path when isolation is useful.
 

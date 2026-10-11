@@ -30,6 +30,7 @@ import {
   statusLabels,
 } from './project-notes';
 import { MapView } from './map-view';
+import { ReviewView } from './review-view';
 import { ProjectDetail, type DetailItem } from './project-panel';
 
 // The project screen: conversations side by side, a thin sidebar to open
@@ -73,7 +74,9 @@ export function Workspace({
   const [detail, setDetail] = useState<DetailItem>();
   const [artifact, setArtifact] = useState<string>();
   // The panes area shows the conversations, or the shape of the work.
-  const [view, setView] = useState<'chat' | 'map'>('chat');
+  const [view, setView] = useState<'chat' | 'map' | 'review'>('chat');
+  // Review keeps its place while you go and ask about something.
+  const [reviewOpened, setReviewOpened] = useState(false);
   // What each conversation's next message points at. Documents and
   // artifacts attach here; the pane shows the chips and sends them.
   const [contexts, setContexts] = useState<
@@ -130,11 +133,19 @@ export function Workspace({
   // Points a document line, file range or element at the conversation you
   // are typing in: the active pane, else the first agent, else the
   // coordinator. Opens that pane and shows the chip.
-  const attachContext = (item: MessageContext) => {
+  // Attaches to targetId's conversation when given (an agent id or
+  // 'coordinator'), else to the active pane.
+  const attachContext = (item: MessageContext, targetId?: string) => {
     const all = liveTargets(project);
     const active = openTargets[activeIndex];
+    const named = targetId
+      ? all.find((candidate) => liveTargetId(candidate) === targetId)
+      : undefined;
     const chosen =
-      active ?? all.find((candidate) => candidate.kind === 'agent') ?? all[0];
+      named ??
+      active ??
+      all.find((candidate) => candidate.kind === 'agent') ??
+      all[0];
     if (!chosen) return;
     const id = liveTargetId(chosen);
     show(id);
@@ -277,6 +288,16 @@ export function Workspace({
             onClick={() => setView('map')}
           >
             Map
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'review'}
+            onClick={() => {
+              setReviewOpened(true);
+              setView('review');
+            }}
+          >
+            Review
           </button>
         </div>
         <div className="app-actions">
@@ -475,8 +496,24 @@ export function Workspace({
       <main
         className="panes"
         id="panes"
-        data-count={view === 'map' ? 1 : openTargets.length}
+        data-count={view === 'chat' ? openTargets.length : 1}
       >
+        {reviewOpened ? (
+          <div className="review-slot" hidden={view !== 'review'}>
+            <ReviewView
+              project={project}
+              onAsk={(item, targetId) => {
+                attachContext(item, targetId);
+                setView('chat');
+              }}
+              onOpenAgent={(agentId) => {
+                show(agentId);
+                setView('chat');
+              }}
+              onOpenArtifact={(path) => openArtifact(path)}
+            />
+          </div>
+        ) : null}
         {view === 'map' ? (
           <MapView
             project={project}

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { commitDiff, listCommits, similarFunctions } from './review.js';
 import { z } from 'zod';
 import {
   AgentCommandSchema,
@@ -201,6 +202,50 @@ export function registerProjectRoutes(
     if (!result.ok) return reply.code(result.status).send(result.body);
     return ProjectFileSchema.parse(result.value);
   });
+
+  // Review: near-duplicate functions in the folder, and its git history.
+  // Read-only; the folder is the one attached to the project.
+  service.get(
+    '/api/projects/:projectId/review/similar',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send(invalid('project'));
+      const target = handle(() => projects.reviewTarget(params.data.projectId));
+      if (!target.ok) return reply.code(target.status).send(target.body);
+      return similarFunctions(target.value.root, target.value.touched);
+    },
+  );
+
+  service.get(
+    '/api/projects/:projectId/review/commits',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      if (!params.success) return reply.code(400).send(invalid('project'));
+      const target = handle(() => projects.reviewTarget(params.data.projectId));
+      if (!target.ok) return reply.code(target.status).send(target.body);
+      return listCommits(target.value.root);
+    },
+  );
+
+  service.get(
+    '/api/projects/:projectId/review/commits/:sha',
+    async (request, reply) => {
+      const params = ProjectParams.extend({
+        sha: z.string().regex(/^[0-9a-f]{7,40}$/),
+      }).safeParse(request.params);
+      if (!params.success) return reply.code(400).send(invalid('commit id'));
+      const target = handle(() => projects.reviewTarget(params.data.projectId));
+      if (!target.ok) return reply.code(target.status).send(target.body);
+      try {
+        return await commitDiff(target.value.root, params.data.sha);
+      } catch {
+        return reply.code(404).send({
+          error: 'That commit is not in this folder.',
+          code: 'not_found',
+        });
+      }
+    },
+  );
 
   // Saving a file you edited in the artifacts viewer.
   service.post('/api/projects/:projectId/files', async (request, reply) => {

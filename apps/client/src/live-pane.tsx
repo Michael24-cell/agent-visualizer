@@ -5,6 +5,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
+import { diffCounts, parseDiff } from './diff-rows';
 import {
   AGENT_MODELS,
   AgentModelSchema,
@@ -423,12 +424,7 @@ function forwardedTaskTitle(
 
 function diffSummary(diff: string): string {
   if (diff.startsWith('(diff too large')) return diff;
-  let added = 0;
-  let removed = 0;
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+')) added += 1;
-    else if (line.startsWith('-')) removed += 1;
-  }
+  const { added, removed } = diffCounts(diff);
   return `+${added} −${removed} · show diff`;
 }
 
@@ -565,20 +561,14 @@ function ToolRowView({
               </span>
               {open ? (
                 <span className="tool-diff">
-                  {output.diff.split('\n').map((line, index) => (
+                  {parseDiff(output.diff).map((row, index) => (
                     <span
                       key={index}
-                      className={
-                        line.startsWith('+')
-                          ? 'diff-add'
-                          : line.startsWith('-')
-                            ? 'diff-del'
-                            : line === '…'
-                              ? 'diff-gap'
-                              : 'diff-ctx'
-                      }
+                      className={`diff-${row.kind === 'note' ? 'ctx' : row.kind}`}
                     >
-                      {line}
+                      {row.kind === 'gap'
+                        ? '…'
+                        : `${row.kind === 'add' ? '+' : row.kind === 'del' ? '-' : ' '}${row.text}`}
                     </span>
                   ))}
                 </span>
