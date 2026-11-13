@@ -57,6 +57,13 @@ import {
 } from './chatgpt-auth.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { registerProjectRoutes } from './project-routes.js';
+import {
+  SESSION_COOKIE,
+  clientAvailable,
+  cookieValue,
+  readClientFile,
+  sessionCookie,
+} from './static-client.js';
 import { ProjectService, type TaskRunner } from './projects.js';
 
 const FOUNDATION_RECORD_ID = 'increment-0';
@@ -195,13 +202,32 @@ export function createService(config: AppConfig) {
     saveFoundationRecord(store.database, foundationRecord);
   }
 
+  const servesClient = clientAvailable(config.clientDirectory);
+
   service.addHook('onRequest', async (request, reply) => {
+    if (
+      config.allowedHosts &&
+      !config.allowedHosts.includes((request.headers.host ?? '').toLowerCase())
+    ) {
+      return reply.code(403).send({ error: 'Host is not allowed.' });
+    }
     const origin = request.headers.origin;
     if (origin && !config.allowedOrigins.includes(origin)) {
       return reply.code(403).send({ error: 'Origin is not allowed.' });
     }
+    // The app's own files need no session; they are how a browser gets one.
+    if (
+      servesClient &&
+      request.method === 'GET' &&
+      !request.url.startsWith('/api/')
+    ) {
+      return;
+    }
 
-    const presentedToken = request.headers['x-harness-session'];
+    // The dev proxy sends a header; the served app sends its cookie.
+    const presentedToken =
+      request.headers['x-harness-session'] ??
+      cookieValue(request.headers.cookie, SESSION_COOKIE);
     if (
       typeof presentedToken !== 'string' ||
       !tokensMatch(config.sessionToken, presentedToken)
@@ -608,6 +634,22 @@ export function createService(config: AppConfig) {
       });
     }
   });
+
+  if (servesClient) {
+    service.setNotFoundHandler(async (request, reply) => {
+      if (request.method !== 'GET' || request.url.startsWith('/api/')) {
+        return reply.code(404).send({ error: 'Not found' });
+      }
+      const file = readClientFile(config.clientDirectory!, request.url);
+      if (!file) return reply.code(404).send({ error: 'Not found' });
+      if (file.isPage) {
+        reply
+          .header('set-cookie', sessionCookie(config.sessionToken))
+          .header('cache-control', 'no-store');
+      }
+      return reply.type(file.type).send(file.body);
+    });
+  }
 
   service.addHook('onClose', async () => {
     chatgpt.close();

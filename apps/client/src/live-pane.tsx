@@ -96,13 +96,21 @@ function ProposalCard({
   busy,
   onDecide,
   onEdit,
+  onNeedFolder,
 }: {
   proposal: Proposal;
   project: ProjectResponse;
   busy: boolean;
   onDecide: (decision: 'approved' | 'denied' | 'dismissed') => void;
   onEdit: () => void;
+  onNeedFolder?: (() => void) | undefined;
 }) {
+  // Real agents work in a folder. Say so on the card, before the click,
+  // and make the button the way to fix it.
+  const needsFolder =
+    proposal.kind === 'plan' &&
+    project.runtime.mode === 'live' &&
+    !project.projection.project.repository;
   const plan =
     proposal.kind === 'plan'
       ? project.projection.plans[proposal.payload.planId]
@@ -154,15 +162,32 @@ function ProposalCard({
           {proposal.consequences.effects.map((e) => e.description).join(' ')}
         </p>
       ) : null}
+      {needsFolder ? (
+        <p className="plan-needs">
+          Agents need a folder to work in. Choose one — an empty folder is fine
+          for something new — and this plan is ready to assign.
+        </p>
+      ) : null}
       <div className="ask-actions">
-        <button
-          type="button"
-          className="primary-action"
-          disabled={busy}
-          onClick={() => onDecide('approved')}
-        >
-          {approveLabel}
-        </button>
+        {needsFolder && onNeedFolder ? (
+          <button
+            type="button"
+            className="primary-action"
+            disabled={busy}
+            onClick={onNeedFolder}
+          >
+            Choose a folder…
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="primary-action"
+            disabled={busy}
+            onClick={() => onDecide('approved')}
+          >
+            {approveLabel}
+          </button>
+        )}
         {proposal.kind === 'plan' ? (
           <button
             type="button"
@@ -593,6 +618,7 @@ export function LivePane({
   onClose,
   onOpenArtifact,
   onAddToPlan,
+  onNeedFolder,
   context = [],
   onContext,
 }: {
@@ -604,6 +630,8 @@ export function LivePane({
   onOpenArtifact?: (path: string) => void;
   // Keeps an idea from the conversation in the Plan document.
   onAddToPlan?: (text: string) => void;
+  // Opens the folder picker, for a plan that cannot start without one.
+  onNeedFolder?: () => void;
   // What the next message points at, held by the workspace so documents
   // and artifacts can attach to the pane you are typing in.
   context?: readonly MessageContext[];
@@ -1138,6 +1166,7 @@ export function LivePane({
               proposal={proposal}
               project={project}
               busy={busy}
+              onNeedFolder={onNeedFolder}
               onDecide={(decision) => decideOpenProposal(proposal, decision)}
               onEdit={() => {
                 setFeedback(

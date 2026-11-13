@@ -7,6 +7,15 @@ Local-first control plane for planning, supervising, and verifying coding-agent 
 - Node.js 22 or newer
 - npm 10 or newer
 
+## Run
+
+```bash
+npm install
+npm start
+```
+
+Builds the app the first time, starts it, and opens it in your browser at `http://127.0.0.1:4317`. One process serves both the interface and the API; the page receives its session as an HttpOnly cookie. Set `HARNESS_PORT` in `.env.local` if 4317 is taken, and `HARNESS_NO_OPEN=1` to skip opening the browser.
+
 ## Develop
 
 ```bash

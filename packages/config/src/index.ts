@@ -39,6 +39,9 @@ const EnvironmentSchema = z.object({
   // Set by scripts/dev.mjs and scripts/start.mjs to the .env.local path so
   // the setup panel can save settings for next start.
   HARNESS_ENV_FILE: z.string().min(1).optional(),
+  // The built client to serve (set by `npm start`). Without it the
+  // service is API-only, as under the dev proxy.
+  HARNESS_CLIENT_DIR: z.string().min(1).optional(),
   XDG_DATA_HOME: z.string().min(1).optional(),
   LOCALAPPDATA: z.string().min(1).optional(),
 });
@@ -50,6 +53,9 @@ export interface AppConfig {
   readonly databasePath: string;
   readonly sessionToken: string;
   readonly allowedOrigins: readonly string[];
+  // Host headers the service answers to. Unset (hand-built test configs)
+  // skips the check; loadAppConfig always sets it.
+  readonly allowedHosts?: readonly string[] | undefined;
   readonly demoProject: boolean;
   readonly folderRoot?: string | undefined;
   readonly replyDelayMs?: number | undefined;
@@ -67,6 +73,8 @@ export interface AppConfig {
   };
   // The file the setup panel writes for next start, when known.
   readonly envFile?: string | undefined;
+  // The built client's folder, when the service should serve the app.
+  readonly clientDirectory?: string | undefined;
 }
 
 export type RuntimeConfig =
@@ -127,6 +135,16 @@ export function loadAppConfig(
       'http://127.0.0.1:5173',
       'http://localhost:5173',
       `http://127.0.0.1:${environment.HARNESS_PORT}`,
+      `http://localhost:${environment.HARNESS_PORT}`,
+    ],
+    // Loopback names only, so a domain re-pointed at 127.0.0.1 (DNS
+    // rebinding) is refused. 5173 is the dev proxy's own address.
+    allowedHosts: [
+      `127.0.0.1:${environment.HARNESS_PORT}`,
+      `localhost:${environment.HARNESS_PORT}`,
+      `[::1]:${environment.HARNESS_PORT}`,
+      '127.0.0.1:5173',
+      'localhost:5173',
     ],
     demoProject: environment.HARNESS_DEMO_PROJECT === '1',
     ...(environment.HARNESS_FOLDER_ROOT
@@ -143,6 +161,9 @@ export function loadAppConfig(
       tools: environment.HARNESS_LOCAL_TOOLS,
     },
     envFile: environment.HARNESS_ENV_FILE,
+    ...(environment.HARNESS_CLIENT_DIR
+      ? { clientDirectory: environment.HARNESS_CLIENT_DIR }
+      : {}),
   };
 }
 

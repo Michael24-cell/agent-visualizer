@@ -7162,3 +7162,13 @@ button.change-title:hover {
 .review-hint-inline {
   color: var(--text-muted);
 }
+
+.plan-needs {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: rgba(var(--amber-rgb), 0.08);
+  color: var(--text-secondary);
+  font-size: 13px;
+}

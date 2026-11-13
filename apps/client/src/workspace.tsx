@@ -17,7 +17,13 @@ import {
   type PlanSectionId,
 } from '@harness/contracts';
 import { FolderPicker } from './folder-picker';
-import { liveTargetId, liveTargets, workLabels, type LiveTarget } from './live';
+import {
+  firstPane,
+  liveTargetId,
+  liveTargets,
+  workLabels,
+  type LiveTarget,
+} from './live';
 import { LivePane } from './live-pane';
 import {
   agentsNote,
@@ -63,10 +69,7 @@ export function Workspace({
   onNotice: (message: string) => void;
 }) {
   const [project, setProject] = useState(initial);
-  const [open, setOpen] = useState<string[]>(() => {
-    const first = liveTargets(initial).find((t) => t.kind === 'agent');
-    return [first ? liveTargetId(first) : 'coordinator'];
-  });
+  const [open, setOpen] = useState<string[]>(() => [firstPane(initial)]);
   const [active, setActive] = useState(0);
   const [sideOpen, setSideOpen] = useState(
     () => typeof window === 'undefined' || window.innerWidth > 960,
@@ -540,6 +543,10 @@ export function Workspace({
                   onClose={() => close(liveTargetId(target))}
                   onOpenArtifact={openArtifact}
                   onAddToPlan={addToPlan}
+                  onNeedFolder={() => {
+                    setSideOpen(true);
+                    setPicking(true);
+                  }}
                   context={contexts[liveTargetId(target)] ?? []}
                   onContext={(next) =>
                     setContexts((current) => ({

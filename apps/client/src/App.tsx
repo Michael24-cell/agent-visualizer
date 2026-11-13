@@ -63,6 +63,23 @@ export function App() {
     };
   }, []);
 
+  // A service that is restarting comes back by itself: keep trying
+  // quietly instead of leaving a dead end that needs a click.
+  const waiting = screen.kind === 'error';
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = window.setInterval(() => {
+      void listProjects()
+        .then((list) => {
+          setProjects(list.projects);
+          setRuntime(list.runtime);
+          setScreen({ kind: 'home' });
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [waiting]);
+
   const openProject = async (projectId: string) => {
     try {
       const project = await readProject(projectId);
@@ -97,6 +114,10 @@ export function App() {
       <main className="loading-screen error-screen">
         <h1>The local service is not answering.</h1>
         <p>{screen.message}</p>
+        <p className="muted">
+          Trying again every few seconds. If it stays down, restart it with{' '}
+          <code>npm start</code> in the project folder.
+        </p>
         <button
           className="primary-action"
           type="button"

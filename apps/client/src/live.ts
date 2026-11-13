@@ -41,3 +41,22 @@ export function liveTargetId(target: LiveTarget): string {
 export function liveTargetTitle(target: LiveTarget): string {
   return target.kind === 'agent' ? target.agent.name : 'Coordinator';
 }
+
+// Which conversation a project opens on: wherever the person's words
+// went. Planning with no agent work yet means the coordinator; otherwise
+// the agent that has (or last had) a task, else the first agent.
+export function firstPane(project: ProjectResponse): string {
+  const agents = liveTargets(project).filter(
+    (target) => target.kind === 'agent',
+  );
+  const worked = agents.find(
+    (target) => target.kind === 'agent' && target.agent.taskIds.length > 0,
+  );
+  if (worked) return liveTargetId(worked);
+  const coordinator = Object.values(project.projection.threads).find(
+    (thread) => thread.kind === 'coordinator',
+  );
+  // More than the opening greeting means the person spoke there.
+  if (coordinator && coordinator.messageCount > 1) return 'coordinator';
+  return agents[0] ? liveTargetId(agents[0]) : 'coordinator';
+}
