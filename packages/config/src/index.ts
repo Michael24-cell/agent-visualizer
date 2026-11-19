@@ -31,6 +31,9 @@ const EnvironmentSchema = z.object({
     .default('auto'),
   // gpt-6.1-sol is the model OpenAI's plan-usage examples use.
   HARNESS_CHATGPT_MODEL: z.string().min(1).default('gpt-6.1-sol'),
+  // On a live account the connected model plans; '0' keeps the built-in
+  // keyword planner.
+  HARNESS_MODEL_PLANNER: z.enum(['0', '1']).default('1'),
   HARNESS_LOCAL_BASE_URL: z.string().url().default('http://127.0.0.1:11434/v1'),
   HARNESS_LOCAL_API_KEY: z.string().min(1).optional(),
   HARNESS_LOCAL_MODEL: z.string().min(1).default('qwen2.5-coder:7b'),
@@ -62,6 +65,8 @@ export interface AppConfig {
   readonly runtime: RuntimeConfig;
   // Whether ANTHROPIC_API_KEY is set (the value is never copied here).
   readonly claudeKeyPresent: boolean;
+  // Whether the connected model plans (live accounts only). Default on.
+  readonly modelPlanner?: boolean | undefined;
   // The model for ChatGPT plan runs, even when not selected.
   readonly chatgptModel?: string | undefined;
   // Defaults for the OpenAI-compatible runtime even when not selected.
@@ -153,6 +158,7 @@ export function loadAppConfig(
     replyDelayMs: environment.HARNESS_REPLY_DELAY_MS,
     runtime: runtimeFrom(environment),
     claudeKeyPresent: Boolean(environment.ANTHROPIC_API_KEY),
+    modelPlanner: environment.HARNESS_MODEL_PLANNER === '1',
     chatgptModel: environment.HARNESS_CHATGPT_MODEL,
     local: {
       baseUrl: environment.HARNESS_LOCAL_BASE_URL,

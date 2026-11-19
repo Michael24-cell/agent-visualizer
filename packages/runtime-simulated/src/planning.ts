@@ -204,7 +204,7 @@ function sectionsFor(lines: readonly string[]): PlanSectionId[] {
   return [...found];
 }
 
-const LANE_DETAIL = {
+export const LANE_DETAIL = {
   interface: {
     agentName: INTERFACE_AGENT.name,
     category: INTERFACE_AGENT.category,
@@ -252,6 +252,39 @@ function taskForLane(
     requiredChecks: [...detail.requiredChecks],
     modelTier: detail.modelTier,
     sections: sectionsFor(lines),
+  };
+}
+
+// A task in a lane with words someone else chose — the connected model,
+// when it plans. Owner, skills, outputs and checks come from the lane so a
+// model plan and a built-in plan assign work the same way.
+export function laneTask(
+  lane: 'interface' | 'orchestration',
+  words: {
+    readonly title: string;
+    readonly objective: string;
+    readonly dependsOn: readonly number[];
+    readonly checks?: readonly string[] | undefined;
+  },
+): PlanTask {
+  const detail = LANE_DETAIL[lane];
+  const extra = (words.checks ?? []).filter(
+    (check) => !detail.requiredChecks.includes(check),
+  );
+  return {
+    title: words.title,
+    objective: words.objective,
+    agentName: detail.agentName,
+    category: detail.category,
+    whySeparate: detail.whySeparate,
+    whyThisAgent: detail.whyThisAgent,
+    skills: [...detail.skills],
+    scope: [],
+    dependsOn: [...words.dependsOn],
+    expectedOutputs: [...detail.expectedOutputs],
+    requiredChecks: [...detail.requiredChecks, ...extra],
+    modelTier: detail.modelTier,
+    sections: sectionsFor([words.title, words.objective]),
   };
 }
 

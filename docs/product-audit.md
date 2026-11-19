@@ -150,7 +150,15 @@ Each is one reviewable change with tests.
 3. **Tell me when it needs me**: tab title and optional notification on
    ask / done / failed; drop the Refresh button.
 4. **Undo from Review**: snapshot before write, revert a step.
-5. **The model as coordinator** on live runtimes, simulator as fallback.
+5. **The model as Planner** on live runtimes, simulator as fallback.
+   _Started 2026-11-18:_ drafting, revising and "go ahead" plans now ask
+   the connected model (`apps/service/src/model-planner.ts`); any failure
+   falls back to the built-in plan and the reply says why.
+   `HARNESS_MODEL_PLANNER=0` turns it off. Intake questions, notes and
+   document edits are still keyword rules. Measured by
+   `npm run eval:planner` (12 cases in `evals/planner/cases.json`): the
+   built-in planner scores 64%; `-- --model` scores the connected model
+   on the same cases.
 6. **Triage and model fit**, with the toggle, recorded against outcomes.
 7. **Running cost and a ceiling.**
 8. **Claude parity**, then **worktrees per agent**.

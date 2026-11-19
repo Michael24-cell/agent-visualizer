@@ -74,6 +74,7 @@ import {
   SIMULATED_CONVERSATION_ADAPTER,
   applyDocumentEdit,
   classifyCoordinatorMessage,
+  type PlanShape,
   featuresFromRequest,
   overviewFromRequest,
   sectionsForText,
@@ -114,6 +115,7 @@ import {
   findSelectorSources,
 } from './element-search.js';
 import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
+import { draftPlan, type ModelPlanner } from './model-planner.js';
 
 export class ProjectCommandError extends Error {
   constructor(
@@ -322,6 +324,16 @@ export interface ProjectServiceOptions {
   // keeps the Claude path but substitutes fake SDK frames (tests).
   readonly runner?: TaskRunner;
   readonly frames?: FrameSource;
+  // The connected model as Planner. Absent: the built-in keyword planner.
+  readonly planner?: ModelPlanner | undefined;
+}
+
+// What a Planner reply was drafted with, said beside the plan.
+interface Drafted {
+  readonly shape?: PlanShape | undefined;
+  // The plan a revision was drafted against; ignored if that changed.
+  readonly planId?: string | undefined;
+  readonly note: string;
 }
 
 export type TaskRunner = (input: LiveTaskInput, sink: LiveTaskSink) => LiveTask;
@@ -332,6 +344,7 @@ export class ProjectService {
   private readonly replies: NonNullable<ProjectServiceOptions['replies']>;
   private runtime: RuntimeInfo;
   private runner: TaskRunner;
+  private planner: ModelPlanner | undefined;
   // Live runs by task id, and the permission waits they are paused on.
   private readonly liveRuns = new Map<
     string,
@@ -355,6 +368,7 @@ export class ProjectService {
     const frames = options.frames ?? sdkFrameSource;
     this.runner =
       options.runner ?? ((input, sink) => runLiveTask(input, sink, frames));
+    this.planner = options.planner;
   }
 
   get isLive(): boolean {
@@ -363,9 +377,14 @@ export class ProjectService {
 
   // Switches what runs future tasks. Tasks already running keep going on
   // the runner they started with.
-  setRuntime(runtime: RuntimeInfo, runner?: TaskRunner): void {
+  setRuntime(
+    runtime: RuntimeInfo,
+    runner?: TaskRunner,
+    planner?: ModelPlanner,
+  ): void {
     this.runtime = runtime;
     if (runner) this.runner = runner;
+    this.planner = runtime.mode === 'live' ? planner : undefined;
     if (runtime.mode === 'live') {
       for (const projection of this.store.listProjections()) {
         this.reconcileLiveRuns(projection.projectId);
@@ -1363,6 +1382,17 @@ export class ProjectService {
         context,
       );
       const grounded = { ...command, context };
+      // Planning on a live account goes to the model: the message lands
+      // now, the plan when the model answers.
+      const planning =
+        thread.kind === 'coordinator' && this.planner
+          ? this.planningRequest(batch.current, command.body)
+          : undefined;
+      if (planning) {
+        const committed = batch.commit();
+        this.scheduleDraft(projectId, thread, grounded, messageId, planning);
+        return committed;
+      }
       // Simulated replies are deferred so panes show typing; a live agent
       // thread has nothing to type — its message is a task or a forward,
       // and both must happen now, before the run moves on.
@@ -1422,6 +1452,97 @@ export class ProjectService {
           }, delay);
         }),
     );
+    this.pending.set(key, work);
+  }
+
+  // Whether a Planner message asks for a plan or a change to one — the
+  // two replies the model drafts. Everything else stays built in.
+  private planningRequest(
+    projection: ProjectProjection,
+    body: string,
+  ): { readonly planId?: string } | undefined {
+    if (parseDocumentEdit(body)) return undefined;
+    const open = this.openPlanProposal(projection);
+    const classified = classifyCoordinatorMessage(body, Boolean(open));
+    if (classified.kind === 'request_work') return {};
+    // "Go ahead and build X" with no plan open: drafted, then assigned.
+    if (classified.kind === 'direct_work' && !open) return {};
+    if (classified.kind === 'edit_plan' && open) {
+      return { planId: open.payload.planId };
+    }
+    return undefined;
+  }
+
+  // Asks the model for the plan, then replies in its own transaction like
+  // a deferred reply. Any failure falls back to the built-in plan.
+  private scheduleDraft(
+    projectId: ProjectId,
+    thread: Thread,
+    command: PostMessageCommand,
+    messageId: string,
+    planning: { readonly planId?: string },
+  ) {
+    const planner = this.planner;
+    if (!planner) return;
+    const key = `${projectId}:${thread.id}`;
+    const previous = this.pending.get(key) ?? Promise.resolve();
+    const work: Promise<void> = previous.then(async () => {
+      try {
+        const before = this.requireProjection(projectId);
+        const plan = planning.planId
+          ? before.plans[planning.planId]
+          : undefined;
+        const draft = await draftPlan(planner, {
+          request: plan?.request ?? command.body,
+          projectName: before.project.name,
+          brief: before.brief,
+          planDocument: Object.fromEntries(
+            Object.entries(before.planDocument.sections).map(
+              ([id, section]) => [id, section.lines],
+            ),
+          ),
+          ...(plan
+            ? {
+                current: { tasks: plan.tasks, whyThisMany: plan.whyThisMany },
+                instruction: command.body,
+              }
+            : {}),
+        });
+        const drafted: Drafted = draft.ok
+          ? {
+              shape: draft.shape,
+              planId: planning.planId,
+              note: `Drafted by ${planner.label}.`,
+            }
+          : {
+              note: `Drafted by the built-in planner: ${draft.reason}.`,
+            };
+        const projection = this.requireProjection(projectId);
+        const current = projection.threads[thread.id]!;
+        const batch = new ProjectBatch(
+          this.store,
+          projectId,
+          randomUUID(),
+          this.now(),
+          projection,
+        );
+        this.handleCoordinatorMessage(
+          batch,
+          projectId,
+          current,
+          command.commandId,
+          command.body,
+          messageId,
+          drafted,
+        );
+        batch.commit();
+        if (this.isLive) this.reconcileLiveRuns(projectId);
+      } catch (error) {
+        this.postFailure(projectId, thread, error);
+      } finally {
+        if (this.pending.get(key) === work) this.pending.delete(key);
+      }
+    });
     this.pending.set(key, work);
   }
 
@@ -1779,9 +1900,11 @@ export class ProjectService {
     commandId: string,
     body: string,
     messageId: string | undefined,
+    drafted?: Drafted,
   ) {
     const projection = batch.current;
     const documentEdit = parseDocumentEdit(body);
+    const said = drafted ? ` ${drafted.note}` : '';
     if (documentEdit) {
       this.applyDocumentEdit(batch, thread, documentEdit, messageId);
       return;
@@ -1874,20 +1997,28 @@ export class ProjectService {
       case 'edit_plan': {
         if (!open) return;
         const current = projection.plans[open.payload.planId]!;
-        const revised = revisePlan(
-          { tasks: current.tasks, whyThisMany: current.whyThisMany },
-          body,
-          current.request,
-          Object.values(projection.agents),
-          this.planFeatures(batch),
-        );
+        const fromModel =
+          drafted?.shape && drafted.planId === current.id
+            ? drafted.shape
+            : undefined;
+        const revised =
+          fromModel ??
+          revisePlan(
+            { tasks: current.tasks, whyThisMany: current.whyThisMany },
+            body,
+            current.request,
+            Object.values(projection.agents),
+            this.planFeatures(batch),
+          );
         const unchanged =
           JSON.stringify(revised.tasks) === JSON.stringify(current.tasks);
         if (unchanged) {
           batch.post(
             thread,
             coordinatorAuthor,
-            'I could not turn that into a plan change. Try: "combine into one agent", "split into two agents", "add checks", or "assign <task> to <agent>".',
+            fromModel
+              ? `The plan already reads that way, so nothing changed.${said}`
+              : `I could not turn that into a plan change. Try: "combine into one agent", "split into two agents", "add checks", or "assign <task> to <agent>".${said}`,
             'chat',
             { proposalId: open.id },
           );
@@ -1912,7 +2043,7 @@ export class ProjectService {
         batch.post(
           thread,
           coordinatorAuthor,
-          `Plan v${plan.version} replaces v${current.version}: ${plan.tasks.length} ${plan.tasks.length === 1 ? 'task' : 'tasks'}. Assign to agents, or tell me what else to change.`,
+          `Plan v${plan.version} replaces v${current.version}: ${plan.tasks.length} ${plan.tasks.length === 1 ? 'task' : 'tasks'}. Assign to agents, or tell me what else to change.${said}`,
           'chat',
           { proposalId },
         );
@@ -1939,7 +2070,8 @@ export class ProjectService {
           projectId,
           suffix,
           body,
-          planFromRequest(body, { features: this.planFeatures(batch) }),
+          drafted?.shape ??
+            planFromRequest(body, { features: this.planFeatures(batch) }),
           live?.id,
         );
         const proposalId = this.proposePlan(
@@ -1953,7 +2085,7 @@ export class ProjectService {
         batch.post(
           thread,
           coordinatorAuthor,
-          `Plan v${plan.version} is ready: ${plan.tasks.length} ${plan.tasks.length === 1 ? 'task' : 'tasks'}. Assign to agents, or tell me what to change.`,
+          `Plan v${plan.version} is ready: ${plan.tasks.length} ${plan.tasks.length === 1 ? 'task' : 'tasks'}. Assign to agents, or tell me what to change.${said}`,
           'chat',
           { proposalId },
         );
@@ -1965,7 +2097,8 @@ export class ProjectService {
         const shape =
           open && live
             ? { tasks: live.tasks, whyThisMany: live.whyThisMany }
-            : planFromRequest(body, { features: this.planFeatures(batch) });
+            : (drafted?.shape ??
+              planFromRequest(body, { features: this.planFeatures(batch) }));
         const request = open && live ? live.request : body;
         // A direct go-ahead on an open proposal assigns that plan; the
         // proposal itself is closed as approved so history reads right.

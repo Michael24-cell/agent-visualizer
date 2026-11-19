@@ -50,6 +50,8 @@ import {
   runOpenAiTask,
 } from '@harness/runtime-openai';
 import { runLiveTask } from '@harness/runtime-claude';
+import type { ModelPlanner } from './model-planner.js';
+import { plannerFor } from './planners.js';
 import {
   CHATGPT_RESOURCE,
   ChatGptAuth,
@@ -75,6 +77,25 @@ const StartSimulatedRunSchema = z.strictObject({
 
 // The runtime the service reports and the runner that executes tasks.
 function runtimeOptions(
+  runtime: RuntimeConfig,
+  chatgpt: ChatGptAuth,
+  plannerOn = true,
+): {
+  runtime: {
+    mode: 'simulated' | 'live';
+    provider?: 'claude' | 'openai' | 'chatgpt';
+    model?: string;
+  };
+  runner?: TaskRunner;
+  planner?: ModelPlanner;
+} {
+  const options = runtimeChoice(runtime, chatgpt);
+  // The Planner can be switched off and left to the built-in rules.
+  const planner = plannerOn ? plannerFor(runtime, chatgpt) : undefined;
+  return planner ? { ...options, planner } : options;
+}
+
+function runtimeChoice(
   runtime: RuntimeConfig,
   chatgpt: ChatGptAuth,
 ): {
@@ -184,7 +205,7 @@ export function createService(config: AppConfig) {
       config.replyDelayMs === undefined
         ? { mode: 'inline' }
         : { mode: 'deferred', delayMs: config.replyDelayMs },
-    ...runtimeOptions(config.runtime, chatgpt),
+    ...runtimeOptions(config.runtime, chatgpt, config.modelPlanner ?? true),
   });
   // Runtime settings can change while running; this is the current one.
   let currentRuntime: RuntimeConfig = config.runtime;
@@ -502,8 +523,12 @@ export function createService(config: AppConfig) {
     } else {
       currentRuntime = { kind: body.kind };
     }
-    const options = runtimeOptions(currentRuntime, chatgpt);
-    projects.setRuntime(options.runtime, options.runner);
+    const options = runtimeOptions(
+      currentRuntime,
+      chatgpt,
+      config.modelPlanner ?? true,
+    );
+    projects.setRuntime(options.runtime, options.runner, options.planner);
     if (config.envFile) {
       try {
         saveEnvFile(config.envFile, {
@@ -564,8 +589,12 @@ export function createService(config: AppConfig) {
     if (currentRuntime.kind === 'chatgpt') {
       // Nothing left to run on: fall back to the simulator, honestly.
       currentRuntime = { kind: 'simulated' };
-      const options = runtimeOptions(currentRuntime, chatgpt);
-      projects.setRuntime(options.runtime, options.runner);
+      const options = runtimeOptions(
+        currentRuntime,
+        chatgpt,
+        config.modelPlanner ?? true,
+      );
+      projects.setRuntime(options.runtime, options.runner, options.planner);
     }
     return RuntimeSettingsSchema.parse(describeRuntime());
   });

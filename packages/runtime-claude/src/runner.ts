@@ -183,3 +183,53 @@ export function runLiveTask(
     },
   };
 }
+
+// One plain question and answer on Claude, no tools and one turn: what
+// the planner uses to ask for a plan. Nothing is written to ~/.claude.
+export async function completeTextClaude(
+  model: AgentModel,
+  system: string,
+  user: string,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<{
+  text: string;
+  usage: { inputTokens: number; outputTokens: number } | undefined;
+}> {
+  const abortController = new AbortController();
+  signal.addEventListener('abort', () => abortController.abort(), {
+    once: true,
+  });
+  for await (const message of query({
+    prompt: user,
+    options: {
+      model: AGENT_MODELS[model].modelId,
+      systemPrompt: system,
+      allowedTools: [],
+      tools: [],
+      maxTurns: 1,
+      abortController,
+      persistSession: false,
+      settingSources: [],
+    },
+  })) {
+    if (message.type !== 'result') continue;
+    if (message.subtype !== 'success' || message.is_error) {
+      throw new Error(`Claude did not answer (${message.subtype}).`);
+    }
+    let inputTokens = 0;
+    let outputTokens = 0;
+    for (const totals of Object.values(message.modelUsage ?? {})) {
+      inputTokens +=
+        (totals.inputTokens ?? 0) +
+        (totals.cacheReadInputTokens ?? 0) +
+        (totals.cacheCreationInputTokens ?? 0);
+      outputTokens += totals.outputTokens ?? 0;
+    }
+    return {
+      text: message.result.trim(),
+      usage:
+        inputTokens || outputTokens ? { inputTokens, outputTokens } : undefined,
+    };
+  }
+  throw new Error('Claude ended without an answer.');
+}

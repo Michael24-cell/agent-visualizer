@@ -1,0 +1,115 @@
+{
+  "about": "Requests a person might type to the Planner, each with what a good plan must do. Graded by apps/service/src/planner-eval.ts. Keep expectations about outcomes a reviewer would agree on, not about exact wording.",
+  "cases": [
+    {
+      "id": "typo-fix",
+      "request": "Fix the typo in the README where it says 'recieve'",
+      "expect": { "tasks": [1, 1], "mentions": ["readme"] }
+    },
+    {
+      "id": "button-color",
+      "request": "Make the sign-up button green instead of blue",
+      "expect": {
+        "tasks": [1, 1],
+        "lanes": ["interface"],
+        "mentions": ["button"]
+      }
+    },
+    {
+      "id": "invoice-downloads",
+      "request": "Customers should be able to download their past invoices as PDFs from their account page",
+      "expect": {
+        "tasks": [1, 3],
+        "lanes": ["interface", "orchestration"],
+        "mentions": ["invoice", "pdf"]
+      }
+    },
+    {
+      "id": "rate-limit",
+      "request": "Add rate limiting to the public API so one key can make at most 100 requests a minute",
+      "expect": {
+        "tasks": [1, 2],
+        "lanes": ["orchestration"],
+        "mentions": ["rate|limit", "100"]
+      }
+    },
+    {
+      "id": "dark-mode",
+      "request": "Add a dark mode that follows the system setting, with a toggle in settings to override it",
+      "expect": {
+        "tasks": [1, 2],
+        "lanes": ["interface"],
+        "mentions": ["dark", "toggle|switch|setting"]
+      }
+    },
+    {
+      "id": "csv-export",
+      "request": "Let admins export the users table to CSV, including sign-up date and plan",
+      "expect": {
+        "tasks": [1, 3],
+        "mentions": ["csv", "export"]
+      }
+    },
+    {
+      "id": "login-bug",
+      "request": "Users get logged out every time they refresh the page. Find out why and fix it",
+      "expect": {
+        "tasks": [1, 2],
+        "mentions": ["log|session|refresh"]
+      }
+    },
+    {
+      "id": "search-page",
+      "request": "Build a search page for recipes: a search box, filters for cuisine and cooking time, and results that load as you type. The search should run on the server against our Postgres database",
+      "expect": {
+        "tasks": [2, 4],
+        "lanes": ["interface", "orchestration"],
+        "mentions": ["search", "filter|cuisine", "postgres|database|server"],
+        "ordered": true
+      }
+    },
+    {
+      "id": "docs-only",
+      "request": "Write a CONTRIBUTING guide that explains how to set up the project, run the tests, and open a pull request",
+      "expect": { "tasks": [1, 1], "mentions": ["contributing"] }
+    },
+    {
+      "id": "with-overview",
+      "request": "Start on it",
+      "overview": {
+        "goal": "A waitlist page for our app launch",
+        "scope": "One landing page with an email form; store sign-ups",
+        "doneMeans": "Someone can join the waitlist and we can see the list"
+      },
+      "expect": {
+        "tasks": [1, 3],
+        "mentions": ["waitlist", "email|sign-up|signup"]
+      }
+    },
+    {
+      "id": "from-plan-document",
+      "request": "Plan this",
+      "planDocument": {
+        "features": [
+          "Upload a profile photo",
+          "Crop it to a square before saving"
+        ],
+        "data": ["Store photos in S3, keep the URL on the user record"]
+      },
+      "expect": {
+        "tasks": [1, 3],
+        "lanes": ["interface", "orchestration"],
+        "mentions": ["photo", "crop", "s3|storage|store"]
+      }
+    },
+    {
+      "id": "refactor",
+      "request": "Our payment code is one 2,000-line file. Split it into modules without changing behavior, and keep the tests passing",
+      "expect": {
+        "tasks": [1, 3],
+        "lanes": ["orchestration"],
+        "mentions": ["payment", "test"]
+      }
+    }
+  ]
+}

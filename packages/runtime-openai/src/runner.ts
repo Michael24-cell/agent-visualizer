@@ -193,14 +193,19 @@ async function complete(
           : {
               model: options.model,
               messages,
-              tools: tools.map((tool) => ({
-                type: 'function',
-                function: {
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.parameters,
-                },
-              })),
+              // Some servers reject an empty tools list; leave it out.
+              ...(tools.length
+                ? {
+                    tools: tools.map((tool) => ({
+                      type: 'function',
+                      function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parameters,
+                      },
+                    })),
+                  }
+                : {}),
               temperature: 0.2,
               max_tokens: options.maxOutputTokens ?? 2_048,
               stream: false,
@@ -240,6 +245,38 @@ async function complete(
   const message = completion.choices?.[0]?.message;
   if (!message) throw new Error('The model returned no choices.');
   return { message, usage: completion.usage };
+}
+
+// One plain question and answer, no tools: what the planner uses to ask
+// the connected model for a plan. Same endpoint, auth, retry and timeout
+// handling as an agent turn.
+export async function completeText(
+  options: OpenAiRuntimeOptions,
+  system: string,
+  user: string,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<{
+  text: string;
+  usage: { inputTokens: number; outputTokens: number } | undefined;
+}> {
+  const { message, usage } = await complete(
+    options,
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    [],
+    signal,
+  );
+  return {
+    text: (message.content ?? '').trim(),
+    usage: usage
+      ? {
+          inputTokens: usage.prompt_tokens ?? 0,
+          outputTokens: usage.completion_tokens ?? 0,
+        }
+      : undefined,
+  };
 }
 
 export function runOpenAiTask(
