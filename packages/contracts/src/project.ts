@@ -65,6 +65,8 @@ export const ProjectSchema = z.strictObject({
   repository: RepositoryRefSchema.optional(),
   // Absent on projects recorded before the setting existed: 'ask'.
   trust: TrustPolicySchema.optional(),
+  // Set while the project is archived: kept, but out of the main list.
+  archivedAt: z.iso.datetime().optional(),
 });
 
 // ---------------------------------------------------------------------------

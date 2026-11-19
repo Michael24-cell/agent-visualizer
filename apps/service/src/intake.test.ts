@@ -167,7 +167,7 @@ describe('intake builds the Brief', () => {
     ).toBe('skipped');
     await say(api, projectId, 'skip');
     turn = await say(api, projectId, 'Solo developers.');
-    expect(turn.reply).toContain('The Brief is ready');
+    expect(turn.reply).toContain('The Overview is ready');
     expect(
       Object.values(turn.response.project.projection.proposals).filter(
         (p) => p.kind === 'set_method',

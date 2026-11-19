@@ -95,6 +95,12 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
     'project.trust_changed',
     z.strictObject({ trust: TrustPolicySchema }),
   ),
+  projectEvent(
+    'project.renamed',
+    z.strictObject({ name: z.string().min(1).max(120) }),
+  ),
+  projectEvent('project.archived', z.strictObject({})),
+  projectEvent('project.unarchived', z.strictObject({})),
 
   projectEvent('thread.opened', z.strictObject({ thread: ThreadSchema })),
   projectEvent(

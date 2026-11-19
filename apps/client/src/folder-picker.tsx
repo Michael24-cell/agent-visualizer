@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { FolderListing } from '@harness/contracts';
-import { listFolders } from './api';
+import { createFolder, listFolders } from './api';
 
-// Browse folders under the allowed root (your home directory) and pick one.
-// Repositories sort first and show their .git mark. You can also paste a path.
+// Browse folders under the allowed root (your home directory) and pick one,
+// or make a new empty one to start from. Repositories sort first and show
+// their mark. You can also paste a path.
 
 export function FolderPicker({
   initialPath,
@@ -17,6 +18,24 @@ export function FolderPicker({
   const [listing, setListing] = useState<FolderListing>();
   const [error, setError] = useState<string>();
   const [typed, setTyped] = useState('');
+  const [naming, setNaming] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  const makeFolder = async () => {
+    const name = newName.trim();
+    if (!listing || !name) return;
+    setError(undefined);
+    try {
+      // Open the new folder so "Use this folder" picks it.
+      setListing(await createFolder(listing.path, name));
+      setNaming(false);
+      setNewName('');
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'The folder was not made.',
+      );
+    }
+  };
 
   const load = (path?: string) => {
     setError(undefined);
@@ -59,8 +78,66 @@ export function FolderPicker({
             ↑
           </button>
         ) : null}
-        <code title={listing?.path}>{listing?.path ?? '…'}</code>
+        <code className="folder-where" title={listing?.path}>
+          {listing ? (
+            <>
+              <span>{listing.parent ? `${listing.parent}/` : ''}</span>
+              <strong>{listing.path.split('/').pop() || listing.path}</strong>
+            </>
+          ) : (
+            '…'
+          )}
+        </code>
+        {listing && !naming ? (
+          <button
+            type="button"
+            className="secondary-action small folder-new"
+            onClick={() => setNaming(true)}
+          >
+            New folder
+          </button>
+        ) : null}
       </div>
+      {naming ? (
+        <form
+          className="folder-typed"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void makeFolder();
+          }}
+        >
+          <input
+            autoFocus
+            value={newName}
+            placeholder="Name for the new folder"
+            aria-label="New folder name"
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setNaming(false);
+                setNewName('');
+              }
+            }}
+          />
+          <button
+            type="submit"
+            className="primary-action small"
+            disabled={!newName.trim()}
+          >
+            Make it
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => {
+              setNaming(false);
+              setNewName('');
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : null}
       {error ? <p className="composer-feedback">{error}</p> : null}
       <ul className="folder-list">
         {listing?.entries.map((entry) => (
@@ -84,7 +161,9 @@ export function FolderPicker({
           </li>
         ))}
         {listing && listing.entries.length === 0 ? (
-          <li className="folder-empty">No folders inside.</li>
+          <li className="folder-empty">
+            Empty. Use this folder to start fresh here.
+          </li>
         ) : null}
       </ul>
       <form

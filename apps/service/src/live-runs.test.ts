@@ -549,7 +549,7 @@ describe('live runs', () => {
     await service.whenIdle();
     project = service.getProject(ids.projectId as never);
     expect(offered).toEqual([false, true]);
-    expect(reply).toMatch(/Method · Checks now has 1 line/);
+    expect(reply).toMatch(/Playbook · Checks now has 1 line/);
     const method = project.projection.method!;
     expect(method.overrides.at(-1)).toMatchObject({
       sectionId: 'checks',

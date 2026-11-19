@@ -47,6 +47,8 @@ import {
   type PlanSectionCommand,
   type ProjectFile,
   type RenameAgentCommand,
+  type RenameProjectCommand,
+  type ArchiveProjectCommand,
   type SetTrustCommand,
   type PostMessageCommand,
   type ProjectEvent,
@@ -818,9 +820,9 @@ export class ProjectService {
               if (!parsed.success) return `Unknown section ${sectionId}.`;
               const current = this.requireProjection(projectId);
               if (current.tasks[task.id]?.state !== 'working') {
-                return 'The task is no longer running; the Method was not changed.';
+                return 'The task is no longer running; the Playbook was not changed.';
               }
-              if (!current.method) return 'No Method is applied any more.';
+              if (!current.method) return 'No Playbook is applied any more.';
               const batch = new ProjectBatch(
                 this.store,
                 projectId,
@@ -838,7 +840,7 @@ export class ProjectService {
               } catch (error) {
                 return error instanceof Error ? error.message : String(error);
               }
-              return `Method · ${METHOD_SECTION_TITLES[parsed.data]} now has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}. Tasks already running keep the Method they started with.`;
+              return `Playbook · ${METHOD_SECTION_TITLES[parsed.data]} now has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}. Tasks already running keep the Playbook they started with.`;
             },
           }
         : {}),
@@ -1107,6 +1109,79 @@ export class ProjectService {
       );
       return batch.commit();
     });
+  }
+
+  renameProject(
+    projectId: ProjectId,
+    command: RenameProjectCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      this.assertSequence(
+        'Project',
+        projection.lastSequence,
+        command.expectedSequence,
+      );
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit('project.renamed', { name: command.name }, { source: 'user' });
+      return batch.commit();
+    });
+  }
+
+  archiveProject(
+    projectId: ProjectId,
+    command: ArchiveProjectCommand,
+  ): CommandResponse {
+    return this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      this.assertSequence(
+        'Project',
+        projection.lastSequence,
+        command.expectedSequence,
+      );
+      if (command.archived) this.assertQuiet(projectId, 'archived');
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      batch.emit(
+        command.archived ? 'project.archived' : 'project.unarchived',
+        {},
+        { source: 'user' },
+      );
+      return batch.commit();
+    });
+  }
+
+  // Deletes the project and its whole history. Refused while anything in
+  // it is running, so no agent writes into a project that is gone.
+  deleteProject(projectId: ProjectId): void {
+    this.requireProjection(projectId);
+    this.assertQuiet(projectId, 'deleted');
+    this.store.deleteProject(projectId);
+  }
+
+  private assertQuiet(projectId: ProjectId, verb: string): void {
+    const running =
+      [...this.liveRuns.values()].some(
+        (entry) => entry.projectId === projectId,
+      ) ||
+      [...this.pending.keys()].some((key) => key.startsWith(`${projectId}:`));
+    if (running) {
+      throw new ProjectCommandError(
+        'agent_busy',
+        `Stop the agents that are working before this project can be ${verb}.`,
+      );
+    }
   }
 
   renameAgent(
@@ -1661,7 +1736,7 @@ export class ProjectService {
       batch.post(
         thread,
         coordinatorAuthor,
-        'No Method is applied yet. Apply one from the Method panel and I will edit it from here.',
+        'No Playbook is applied yet. Apply one from the Playbook panel and I will edit it from here.',
       );
       return;
     }
@@ -1763,13 +1838,13 @@ export class ProjectService {
                 keywordsMatched: classified.keywordsMatched,
               },
               title: 'Record request',
-              summary: `Add this ${category} request to the Brief so agents see it.`,
+              summary: `Add this ${category} request to the Overview so agents see it.`,
               state: 'open',
               consequences: {
                 effects: [
                   {
                     kind: 'append_brief_request',
-                    description: 'Appends one request to the Brief.',
+                    description: 'Appends one request to the Overview.',
                   },
                 ],
                 reversible: true,
@@ -1790,7 +1865,7 @@ export class ProjectService {
         batch.post(
           thread,
           coordinatorAuthor,
-          `That sounds like a ${category} request. Record it in the Brief?`,
+          `That sounds like a ${category} request. Record it in the Overview?`,
           'chat',
           { proposalId },
         );
@@ -1999,7 +2074,7 @@ export class ProjectService {
                 ? [
                     {
                       kind: 'pin_method' as const,
-                      description: 'Pins the current Method to each task.',
+                      description: 'Pins the current Playbook to each task.',
                     },
                   ]
                 : []),
@@ -2174,7 +2249,7 @@ export class ProjectService {
           threadId: thread.id,
           kind: 'set_method',
           payload: { catalogId: method.id, catalogVersion: method.version },
-          title: `Apply a Method: ${method.title}`,
+          title: `Apply a Playbook: ${method.title}`,
           summary:
             'Default behavior is fine for most projects. If you want rules, skills, and checks shaping how agents work here, apply a method. You can customize it per project afterwards.',
           state: 'open',
@@ -2183,7 +2258,7 @@ export class ProjectService {
               {
                 kind: 'pin_method',
                 description:
-                  'Every task assigned from now on pins this Method as it stands at that moment.',
+                  'Every task assigned from now on pins this Playbook as it stands at that moment.',
               },
             ],
             reversible: true,
@@ -2213,7 +2288,7 @@ export class ProjectService {
     if (!method) {
       throw new ProjectCommandError(
         'not_found',
-        `Method ${catalogId} ${catalogVersion} is not in the catalog.`,
+        `Playbook ${catalogId} ${catalogVersion} is not in the catalog.`,
       );
     }
     batch.emit(
@@ -2227,7 +2302,7 @@ export class ProjectService {
     batch.post(
       coordinator,
       coordinatorAuthor,
-      `Method applied: ${method.title} v${method.version}. Tasks assigned from now on pin it; tasks already running keep what they had.`,
+      `Playbook applied: ${method.title} v${method.version}. Tasks assigned from now on pin it; tasks already running keep what they had.`,
       'chat',
       proposalId ? { proposalId } : undefined,
     );
@@ -2259,7 +2334,7 @@ export class ProjectService {
               proposalId: proposal.id,
               from: 'open',
               to: 'dismissed',
-              note: 'Dismissed because a Method was applied directly.',
+              note: 'Dismissed because a Playbook was applied directly.',
             },
             { threadId: proposal.threadId, source: 'user' },
           );
@@ -2284,7 +2359,7 @@ export class ProjectService {
       if (!projection.method) {
         throw new ProjectCommandError(
           'invalid_command',
-          'Apply a Method before customizing it.',
+          'Apply a Playbook before customizing it.',
         );
       }
       this.assertSequence(
@@ -2315,7 +2390,7 @@ export class ProjectService {
     return this.run(command.commandId, projectId, () => {
       const projection = this.requireProjection(projectId);
       if (!projection.method) {
-        throw new ProjectCommandError('not_found', 'No Method is applied.');
+        throw new ProjectCommandError('not_found', 'No Playbook is applied.');
       }
       this.assertSequence(
         'Method',
@@ -2487,7 +2562,7 @@ export class ProjectService {
           batch.post(
             thread,
             coordinatorAuthor,
-            'Recorded in the Brief.',
+            'Recorded in the Overview.',
             'chat',
             {
               proposalId: proposal.id,

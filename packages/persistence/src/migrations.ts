@@ -135,6 +135,36 @@ const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // Deleting a project. Events and messages stay append-only, except for a
+    // project the user asked to delete: its id is written to project_purges
+    // inside the delete transaction, and the triggers let only those rows go.
+    version: 4,
+    name: 'project-purge',
+    sql: `
+      CREATE TABLE project_purges (project_id TEXT PRIMARY KEY);
+
+      DROP TRIGGER project_events_are_append_only_delete;
+      CREATE TRIGGER project_events_are_append_only_delete
+      BEFORE DELETE ON project_events
+      WHEN NOT EXISTS (
+        SELECT 1 FROM project_purges WHERE project_id = OLD.project_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'project events are append-only');
+      END;
+
+      DROP TRIGGER messages_are_append_only_delete;
+      CREATE TRIGGER messages_are_append_only_delete
+      BEFORE DELETE ON messages
+      WHEN NOT EXISTS (
+        SELECT 1 FROM project_purges WHERE project_id = OLD.project_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'messages are append-only');
+      END;
+    `,
+  },
 ];
 
 export function runMigrations(database: Database.Database): number {

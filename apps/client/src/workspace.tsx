@@ -46,7 +46,7 @@ import { ProjectDetail, type DetailItem } from './project-panel';
 const MAX_PANES = 3;
 
 function targetName(target: LiveTarget): string {
-  return target.kind === 'agent' ? target.agent.name : 'Coordinator';
+  return target.kind === 'agent' ? target.agent.name : 'Planner';
 }
 
 function targetCategory(target: LiveTarget): string {
@@ -230,14 +230,14 @@ export function Workspace({
 
   const attention = project.summary.attention;
   const sections: Array<{ id: DetailItem; label: string; note: string }> = [
-    { id: 'brief', label: 'Brief', note: briefNote(project) },
-    { id: 'method', label: 'Method', note: methodNote(project) },
+    { id: 'brief', label: 'Overview', note: briefNote(project) },
+    { id: 'method', label: 'Playbook', note: methodNote(project) },
     { id: 'plan', label: 'Plan', note: planNote(project) },
     { id: 'agents', label: 'Agents', note: agentsNote(project) },
-    { id: 'artifacts', label: 'Artifacts', note: artifactsNote(project) },
+    { id: 'artifacts', label: 'Files', note: artifactsNote(project) },
     {
       id: 'history',
-      label: 'Changes',
+      label: 'History',
       note: `${project.projection.lastSequence} recorded`,
     },
   ];

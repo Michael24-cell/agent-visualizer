@@ -95,7 +95,7 @@ function project(
       openProposalIds: [],
       attention: {
         kind: 'intake',
-        label: 'Tell the coordinator what to build',
+        label: 'Tell the planner what to build',
       },
       lastSequence: 4,
     },

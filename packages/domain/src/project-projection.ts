@@ -359,6 +359,35 @@ export function applyProjectEvent(
     case 'project.created':
       throw new ProjectionError('duplicate_entity', 'Project already exists.');
 
+    case 'project.renamed': {
+      if (next.project.name === event.payload.name) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `The project is already called ${event.payload.name}.`,
+        );
+      }
+      next.project = { ...next.project, name: event.payload.name };
+      break;
+    }
+
+    case 'project.archived': {
+      if (next.project.archivedAt) {
+        throw new ProjectionError('invalid_payload', 'Already archived.');
+      }
+      next.project = { ...next.project, archivedAt: event.occurredAt };
+      break;
+    }
+
+    case 'project.unarchived': {
+      if (!next.project.archivedAt) {
+        throw new ProjectionError('invalid_payload', 'Not archived.');
+      }
+      const restored = { ...next.project };
+      delete restored.archivedAt;
+      next.project = restored;
+      break;
+    }
+
     case 'project.trust_changed': {
       if ((next.project.trust ?? 'ask') === event.payload.trust) {
         throw new ProjectionError(

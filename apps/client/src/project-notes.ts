@@ -3,6 +3,7 @@ import {
   type DocumentEditSource,
   type ProjectEvent,
   type ProjectResponse,
+  type RuntimeSettings,
 } from '@harness/contracts';
 
 // Short, honest one-liners about a project for sidebars and lists, plus the
@@ -61,24 +62,48 @@ export function briefNote(project: ProjectResponse): string {
   return `${settled} of ${BRIEF_REQUIRED_FIELDS.length} decided`;
 }
 
+// What the app shows as running agents, from the saved settings.
+export function runtimeFromSettings(
+  settings: RuntimeSettings,
+): ProjectResponse['runtime'] {
+  switch (settings.kind) {
+    case 'simulated':
+      return { mode: 'simulated' };
+    case 'claude':
+      return { mode: 'live', provider: 'claude' };
+    case 'chatgpt':
+      return {
+        mode: 'live',
+        provider: 'chatgpt',
+        model: settings.chatgpt.model,
+      };
+    default:
+      return {
+        mode: 'live',
+        provider: 'openai',
+        ...(settings.model ? { model: settings.model } : {}),
+      };
+  }
+}
+
 // What the header badge and hints call the runtime.
 export function runtimeLabel(runtime: ProjectResponse['runtime']): string {
-  if (runtime.mode !== 'live') return 'Simulated';
+  if (runtime.mode !== 'live') return 'Practice agents';
   if (runtime.provider === 'chatgpt')
-    return `ChatGPT · ${runtime.model ?? 'plan'}`;
+    return `ChatGPT plan · ${runtime.model ?? 'default model'}`;
   if (runtime.provider === 'openai') return runtime.model ?? 'Local model';
   return 'Claude';
 }
 
 export function runtimeNote(runtime: ProjectResponse['runtime']): string {
   if (runtime.mode !== 'live') {
-    return 'Agents are simulated. Set ANTHROPIC_API_KEY for Claude, or HARNESS_RUNTIME=local for a local model.';
+    return 'Practice agents follow a script and use no model. Connect an account on the start screen.';
   }
   if (runtime.provider === 'chatgpt') {
     return `Agents run on ${runtime.model ?? 'your ChatGPT model'} through your ChatGPT plan — no API key; it counts against your plan's usage.`;
   }
   if (runtime.provider === 'openai') {
-    return `Agents run on ${runtime.model ?? 'a local model'} through your OpenAI-compatible endpoint.`;
+    return `Agents run on ${runtime.model ?? 'your model'}.`;
   }
   return 'Agents run on Claude with your API key.';
 }

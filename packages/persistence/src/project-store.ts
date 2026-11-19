@@ -93,6 +93,26 @@ export class SqliteProjectStore {
     return this.stream.appendMany(events);
   }
 
+  // Removes a project and everything recorded for it, in one transaction.
+  // The only way rows leave the append-only tables. Returns false when
+  // there was no such project.
+  deleteProject(projectId: ProjectId): boolean {
+    const id = ProjectIdSchema.parse(projectId);
+    return this.transaction(() => {
+      if (!this.getProjection(id)) return false;
+      const db = this.database;
+      db.prepare('INSERT INTO project_purges (project_id) VALUES (?)').run(id);
+      db.prepare('DELETE FROM messages WHERE project_id = ?').run(id);
+      db.prepare('DELETE FROM project_events WHERE project_id = ?').run(id);
+      db.prepare('DELETE FROM project_projections WHERE project_id = ?').run(
+        id,
+      );
+      db.prepare('DELETE FROM command_receipts WHERE project_id = ?').run(id);
+      db.prepare('DELETE FROM project_purges WHERE project_id = ?').run(id);
+      return true;
+    });
+  }
+
   rebuildAllProjections(): ProjectProjection[] {
     return this.stream.rebuildAllProjections();
   }

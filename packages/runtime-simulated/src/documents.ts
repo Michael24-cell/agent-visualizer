@@ -177,7 +177,7 @@ export function applyDocumentEdit(
   const where =
     edit.document === 'plan'
       ? `Plan · ${PLAN_SECTIONS[edit.sectionId].title}`
-      : `Method · ${METHOD_SECTION_TITLES[edit.sectionId]}`;
+      : `Playbook · ${METHOD_SECTION_TITLES[edit.sectionId]}`;
   switch (edit.op) {
     case 'add': {
       const fresh = edit.lines.filter(

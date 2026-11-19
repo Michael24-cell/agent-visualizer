@@ -92,7 +92,7 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
         entries.push({
           ...base,
           kind: 'idea',
-          title: `Method · ${METHOD_TITLES[event.payload.sectionId] ?? event.payload.sectionId}`,
+          title: `Playbook · ${METHOD_TITLES[event.payload.sectionId] ?? event.payload.sectionId}`,
           ...diff(before, event.payload.value),
           target: { kind: 'method' },
         });
@@ -107,7 +107,7 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
         entries.push({
           ...base,
           kind: 'setting',
-          title: `Method: ${event.payload.definition.title}`,
+          title: `Playbook: ${event.payload.definition.title}`,
           detail: event.payload.definition.purpose,
           target: { kind: 'method' },
         });
@@ -116,7 +116,7 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
         entries.push({
           ...base,
           kind: 'setting',
-          title: 'Method reset to its catalog entry',
+          title: 'Playbook reset to its catalog entry',
           target: { kind: 'method' },
         });
         break;

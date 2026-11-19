@@ -35,8 +35,8 @@ describe('persistence foundation', () => {
     const databasePath = join(directory, 'test.db');
 
     const firstConnection = openHarnessDatabase(databasePath);
-    expect(firstConnection.migrationCount).toBe(3);
-    expect(runMigrations(firstConnection.database)).toBe(3);
+    expect(firstConnection.migrationCount).toBe(4);
+    expect(runMigrations(firstConnection.database)).toBe(4);
 
     const record = {
       id: 'increment-0',
@@ -47,7 +47,7 @@ describe('persistence foundation', () => {
     firstConnection.close();
 
     const secondConnection = openHarnessDatabase(databasePath);
-    expect(getMigrationCount(secondConnection.database)).toBe(3);
+    expect(getMigrationCount(secondConnection.database)).toBe(4);
     expect(getFoundationRecord(secondConnection.database, record.id)).toEqual(
       record,
     );
@@ -81,6 +81,8 @@ describe('increment 2.6 migration safety', () => {
 
     // Roll the schema back to version 2 so the 2.6 migration runs for real.
     seeded.database.exec(`
+      DROP TABLE project_purges;
+      DELETE FROM schema_migrations WHERE version = 4;
       DROP TABLE command_receipts;
       DROP TABLE messages;
       DROP TABLE project_projections;
@@ -91,8 +93,8 @@ describe('increment 2.6 migration safety', () => {
     seeded.close();
 
     const upgraded = openHarnessDatabase(databasePath);
-    expect(upgraded.migrationCount).toBe(3);
-    expect(runMigrations(upgraded.database)).toBe(3);
+    expect(upgraded.migrationCount).toBe(4);
+    expect(runMigrations(upgraded.database)).toBe(4);
     const after = new SqliteEventStore(upgraded.database);
     expect(JSON.stringify(after.listEvents(ids.runId))).toBe(eventsBefore);
     expect(JSON.stringify(after.getProjection(ids.runId))).toBe(

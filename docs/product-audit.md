@@ -18,7 +18,7 @@ vocabulary, or what happened in earlier sessions.
 | First screen              | Empty sidebar, "Where is the code?", a text box, a line about "your OpenAI-compatible endpoint".                                                        | Nothing says what this is or what happens next.                                                         |
 | Type a request, no folder | The hint promised the coordinator. The app opened an empty agent pane reading "Nothing yet." The message and the plan were in a pane that was not open. | **Fixed:** a project opens on the conversation your words went to.                                      |
 | Press "Assign to agents"  | Nothing visible happened. A grey line at the bottom said a folder was needed.                                                                           | **Fixed:** the card says so before the click, and the button opens the folder picker.                   |
-| Choose a folder           | Lists your home folder. No way to make a new one, though the card says an empty folder is fine.                                                         | Open.                                                                                                   |
+| Choose a folder           | Lists your home folder. No way to make a new one, though the card says an empty folder is fine.                                                         | **Fixed:** "New folder" in the picker makes one and opens it.                                           |
 | Service restarts          | Full-screen "not answering" with a button.                                                                                                              | **Fixed:** retries by itself every few seconds and says how to restart.                                 |
 
 ### What still makes it feel like a developer tool
@@ -140,9 +140,13 @@ Each is one reviewable change with tests.
 
 1. ~~One-command start, first-run dead ends, self-healing error screen~~
    — done with this document.
-2. **First-run in plain words**: the account question instead of the
+2. ~~**First-run in plain words**: the account question instead of the
    runtime form; rename the surfaces; "New folder" in the picker; rename,
-   archive and delete for projects.
+   archive and delete for projects.~~ — done 2026-11-18. Coordinator →
+   Planner, Brief → Overview, Method → Playbook, Artifacts → Files,
+   Changes → History (display only; ids unchanged). Delete is real: a
+   purge migration lets only a deleted project's rows leave the
+   append-only tables, and it is refused while agents are working.
 3. **Tell me when it needs me**: tab title and optional notification on
    ask / done / failed; drop the Refresh button.
 4. **Undo from Review**: snapshot before write, revert a step.

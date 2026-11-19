@@ -164,7 +164,7 @@ export function planIntake(brief: Brief, body: string): IntakeResult {
     return {
       updates,
       handled: updates.length > 0,
-      reply: `${prefix}The Brief is ready. Tell me what to build and I'll propose a plan, or type straight into an agent pane.`,
+      reply: `${prefix}The Overview is ready. Tell me what to build and I'll propose a plan, or type straight into an agent pane.`,
     };
   }
   const nextState = next.fields[nextPending];
@@ -254,7 +254,7 @@ export const METHOD_CATALOG: readonly MethodDefinition[] = [
     title: 'Docs only',
     purpose: 'Explain, document, and plan without changing any code.',
     whenToUse:
-      'READMEs, design notes, Plan and Method work, reviewing a codebase you do not want touched.',
+      'READMEs, design notes, Plan and Playbook work, reviewing a codebase you do not want touched.',
     hardRules: [
       'Do not change code. Only .md and .txt files may be written.',
       'Do not run commands.',
@@ -271,7 +271,9 @@ export const METHOD_CATALOG: readonly MethodDefinition[] = [
     skills: ['Technical writing', 'Codebase reading'],
     outputExpectations: ['The document', 'Updated Plan sections'],
     checks: [],
-    scopeRestrictions: ['*.md and *.txt only; the Plan and Method documents.'],
+    scopeRestrictions: [
+      '*.md and *.txt only; the Plan and Playbook documents.',
+    ],
     agentDefaults: { modelTier: 'standard', tools: 'docs' },
   },
 ];

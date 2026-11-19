@@ -98,6 +98,64 @@ export async function listFolders(path?: string): Promise<FolderListing> {
   );
 }
 
+// A new, empty folder inside `parent`; returns its (empty) listing.
+export async function createFolder(
+  parent: string,
+  name: string,
+): Promise<FolderListing> {
+  return FolderListingSchema.parse(
+    await (
+      await request('/api/folders', {
+        method: 'POST',
+        body: JSON.stringify({ parent, name }),
+      })
+    ).json(),
+  );
+}
+
+export async function renameProject(
+  projectId: string,
+  expectedSequence: number,
+  name: string,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/name`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          name,
+        }),
+      })
+    ).json(),
+  );
+}
+
+export async function archiveProject(
+  projectId: string,
+  expectedSequence: number,
+  archived: boolean,
+): Promise<CommandResponse> {
+  return CommandResponseSchema.parse(
+    await (
+      await request(`/api/projects/${projectId}/archive`, {
+        method: 'POST',
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(),
+          expectedSequence,
+          archived,
+        }),
+      })
+    ).json(),
+  );
+}
+
+// Permanent: the project and its whole history are removed.
+export async function deleteProject(projectId: string): Promise<void> {
+  await request(`/api/projects/${projectId}`, { method: 'DELETE' });
+}
+
 export async function attachRepository(
   projectId: string,
   expectedSequence: number,

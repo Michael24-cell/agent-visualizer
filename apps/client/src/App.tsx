@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ProjectListResponse, ProjectResponse } from '@harness/contracts';
 import { listProjects, readProject } from './api';
 import { Home } from './home';
+import { runtimeFromSettings, runtimeLabel } from './project-notes';
 import { Workspace } from './workspace';
 
 // Two screens: the start screen (your projects, one composer) and the
@@ -138,22 +139,17 @@ export function App() {
           onOpen={(id) => void openProject(id)}
           onCreated={(id) => void openProject(id)}
           onError={setActionError}
+          onProjectsChanged={() => {
+            void listProjects()
+              .then((list) => setProjects(list.projects))
+              .catch(() => undefined);
+          }}
           onRuntimeChanged={(settings) => {
-            setRuntime(
-              settings.kind === 'simulated'
-                ? { mode: 'simulated' }
-                : settings.kind === 'claude'
-                  ? { mode: 'live', provider: 'claude' }
-                  : {
-                      mode: 'live',
-                      provider: 'openai',
-                      ...(settings.model ? { model: settings.model } : {}),
-                    },
-            );
+            setRuntime(runtimeFromSettings(settings));
             setNotice(
               settings.kind === 'simulated'
-                ? 'Agents are simulated.'
-                : `Agents run on ${settings.kind === 'claude' ? 'Claude' : (settings.model ?? 'the configured model')}.`,
+                ? 'Agents are practice agents.'
+                : `Agents now use ${runtimeLabel(runtimeFromSettings(settings))}.`,
             );
           }}
         />

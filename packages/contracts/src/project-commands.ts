@@ -72,6 +72,31 @@ export const SetTrustCommandSchema = z.strictObject({
   trust: TrustPolicySchema,
 });
 
+// Targets the project; expectedSequence is the project's lastSequence.
+export const RenameProjectCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  name: z.string().trim().min(1).max(120),
+});
+
+// Targets the project. Archiving keeps everything; it only leaves the list.
+export const ArchiveProjectCommandSchema = z.strictObject({
+  ...CommandBaseShape,
+  archived: z.boolean(),
+});
+
+// A new, empty folder inside `parent`, which must be under the allowed root.
+export const CreateFolderCommandSchema = z.strictObject({
+  parent: z.string().min(1),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine((name) => !/[/\\\0]/.test(name) && name !== '.' && name !== '..', {
+      message: 'A folder name cannot contain slashes.',
+    }),
+});
+
 // Targets an agent; expectedSequence is that agent's lastSequence.
 export const RenameAgentCommandSchema = z.strictObject({
   ...CommandBaseShape,
@@ -176,6 +201,7 @@ export const CommandErrorCodeSchema = z.enum([
   'invalid_transition',
   'folder_not_found',
   'folder_not_allowed',
+  'folder_exists',
   'folder_required',
 ]);
 
@@ -306,6 +332,9 @@ export type CreateProjectCommand = z.infer<typeof CreateProjectCommandSchema>;
 export type CreateAgentCommand = z.infer<typeof CreateAgentCommandSchema>;
 export type SetAgentModelCommand = z.infer<typeof SetAgentModelCommandSchema>;
 export type RenameAgentCommand = z.infer<typeof RenameAgentCommandSchema>;
+export type RenameProjectCommand = z.infer<typeof RenameProjectCommandSchema>;
+export type ArchiveProjectCommand = z.infer<typeof ArchiveProjectCommandSchema>;
+export type CreateFolderCommand = z.infer<typeof CreateFolderCommandSchema>;
 export type SetTrustCommand = z.infer<typeof SetTrustCommandSchema>;
 export type MethodResetCommand = z.infer<typeof MethodResetCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;

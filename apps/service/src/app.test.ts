@@ -67,7 +67,7 @@ describe('local service boundary', () => {
     expect(authorized.statusCode).toBe(200);
     expect(authorized.json()).toMatchObject({
       record: { id: 'increment-0' },
-      migrationCount: 3,
+      migrationCount: 4,
     });
 
     await service.close();

@@ -89,7 +89,7 @@ const sectionExamples: Record<MethodSectionId, string> = {
   promptGuidance: 'Guidance',
   skills: 'Skills',
   outputExpectations: 'Outputs',
-  checks: 'Method checks',
+  checks: 'Checks',
   scopeRestrictions: 'Scope restrictions',
 };
 
@@ -117,7 +117,9 @@ function BriefView({ project, busy, onProject, onError }: DetailProps) {
       setEditing(undefined);
     } catch (error) {
       onError(
-        error instanceof Error ? error.message : 'The Brief was not updated.',
+        error instanceof Error
+          ? error.message
+          : 'The Overview was not updated.',
       );
     }
   };
@@ -126,7 +128,7 @@ function BriefView({ project, busy, onProject, onError }: DetailProps) {
       <p className="detail-lead">
         {project.summary.briefReady
           ? 'Required fields are decided. Agents read this before they start.'
-          : 'Answer the coordinator, or fill in fields here. Goal, scope, and done means are required.'}
+          : 'Answer the planner, or fill in fields here. Goal, scope, and done means are required.'}
       </p>
       <ul className="field-list">
         {BriefFieldIdSchema.options.map((fieldId) => {
@@ -232,7 +234,7 @@ function BriefView({ project, busy, onProject, onError }: DetailProps) {
         </section>
       ) : null}
       <p className="detail-foot">
-        Brief v{brief.version} ·{' '}
+        Overview v{brief.version} ·{' '}
         <code>{project.brief.digest.slice(0, 19)}…</code>
       </p>
     </div>
@@ -280,7 +282,9 @@ function MethodView({
       onProject(result.project);
     } catch (error) {
       onError(
-        error instanceof Error ? error.message : 'The Method was not applied.',
+        error instanceof Error
+          ? error.message
+          : 'The Playbook was not applied.',
       );
     }
   };
@@ -353,7 +357,7 @@ function MethodView({
                         onAsk: (line: string, index: number) =>
                           onAsk({
                             kind: 'method',
-                            label: `Method · ${sectionLabels[sectionId]}`,
+                            label: `Playbook · ${sectionLabels[sectionId]}`,
                             detail: line,
                             sectionId,
                             line: index + 1,
@@ -381,7 +385,7 @@ function MethodView({
                       onError(
                         error instanceof Error
                           ? error.message
-                          : 'The Method was not reset.',
+                          : 'The Playbook was not reset.',
                       ),
                     );
                 }}
@@ -549,8 +553,7 @@ function PlanView({
       <h3 className="doc-tasks-title">Tasks</h3>
       {!plans.length ? (
         <p className="field-value muted">
-          No tasks yet. Tell the coordinator what to build and it will propose
-          them.
+          No tasks yet. Tell the planner what to build and it will propose them.
         </p>
       ) : null}
       {plans.map((plan) => {
@@ -773,7 +776,7 @@ function AgentsView({ project }: DetailProps) {
                 : ''}
               {task?.modelTier ? ` · ${task.modelTier} model` : ''}
               {snapshot
-                ? ` · Method ${snapshot.resolved.title} (pinned v${snapshot.methodVersion})`
+                ? ` · Playbook ${snapshot.resolved.title} (pinned v${snapshot.methodVersion})`
                 : task
                   ? ' · default behavior'
                   : ''}
@@ -875,7 +878,7 @@ function HistoryView({
         >
           <option value="all">Everyone</option>
           <option value="you">You</option>
-          <option value="coordinator">Coordinator</option>
+          <option value="coordinator">Planner</option>
           <option value="agent">Agents</option>
           <option value="harness">Harness</option>
         </select>
@@ -1008,12 +1011,12 @@ export function ProjectDetail({
   onClose: () => void;
 }) {
   const titles: Record<DetailItem, string> = {
-    brief: 'Brief',
-    method: 'Method',
+    brief: 'Overview',
+    method: 'Playbook',
     plan: 'Plan',
     agents: 'Agents',
-    artifacts: 'Artifacts',
-    history: 'Changes',
+    artifacts: 'Files',
+    history: 'History',
   };
   return (
     <aside

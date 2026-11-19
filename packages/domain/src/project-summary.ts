@@ -109,7 +109,7 @@ function deriveAttention(
     Object.keys(projection.tasks).length === 0 &&
     !isBriefReady(projection.brief)
   ) {
-    return { kind: 'intake', label: 'Tell the coordinator what to build' };
+    return { kind: 'intake', label: 'Tell the planner what to build' };
   }
   return undefined;
 }

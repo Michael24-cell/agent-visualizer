@@ -53,7 +53,7 @@ import { runtimeLabel } from './project-notes';
 function authorLabel(message: Message, target: LiveTarget): string | undefined {
   if (message.author.role === 'user') return undefined;
   if (message.author.role === 'coordinator' && target.kind === 'agent')
-    return 'Coordinator';
+    return 'Planner';
   if (message.author.role === 'system') return 'Harness';
   return undefined;
 }
@@ -119,7 +119,7 @@ function ProposalCard({
     proposal.kind === 'plan'
       ? 'Assign to agents'
       : proposal.kind === 'record_request'
-        ? 'Record in Brief'
+        ? 'Add to Overview'
         : 'Approve';
   return (
     <li className="line plan-card">
@@ -501,7 +501,7 @@ function ToolRowView({
             <button
               type="button"
               className="tool-target tool-link"
-              title="Open in Artifacts"
+              title="Open in Files"
               onClick={() => onOpenArtifact(row.activity.target)}
             >
               {row.activity.target}
@@ -562,7 +562,7 @@ function ToolRowView({
             <button
               type="button"
               className="tool-target tool-link"
-              title="Open in Artifacts"
+              title="Open in Files"
               onClick={() => onOpenArtifact(output.location!)}
             >
               {output.title}
@@ -807,7 +807,7 @@ export function LivePane({
     if (parsed.kind === 'stop') {
       if (target.kind !== 'agent') {
         setFeedback(
-          'The coordinator has nothing to stop. Stop agents in their own panes.',
+          'The planner has nothing to stop. Stop agents in their own panes.',
         );
         return;
       }
@@ -827,7 +827,7 @@ export function LivePane({
         : 'chat';
     if (intent === 'start_work' && target.kind !== 'agent') {
       setFeedback(
-        'The coordinator does not take work directly yet. Use /start in an agent pane.',
+        'The planner does not take work directly yet. Use /start in an agent pane.',
       );
       return;
     }
@@ -1284,7 +1284,7 @@ export function LivePane({
               <span className="composer-note">
                 {target.kind === 'agent'
                   ? runtimeLabel(project.runtime)
-                  : 'Coordinator'}
+                  : 'Planner'}
               </span>
             )}
             {feedback ? (

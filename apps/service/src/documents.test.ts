@@ -200,7 +200,7 @@ describe('method document', () => {
     });
     expect(response.project.projection.method).toBeNull();
     expect((await lastReply(api, projectId, coordinator.id)).body).toMatch(
-      /No Method is applied yet/,
+      /No Playbook is applied yet/,
     );
 
     response = await api.command(`/api/projects/${projectId}/method`, {
@@ -224,7 +224,7 @@ describe('method document', () => {
     expect(override.value.at(-1)).toBe('never push to main');
     expect(override.value.length).toBeGreaterThan(1);
     expect((await lastReply(api, projectId, coordinator.id)).body).toBe(
-      'Added to Method · Hard rules: never push to main.',
+      'Added to Playbook · Hard rules: never push to main.',
     );
 
     // A direct override records the user as its source.

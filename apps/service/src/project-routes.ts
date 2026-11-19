@@ -30,6 +30,9 @@ import {
   ProposalDecisionCommandSchema,
   ProposalIdSchema,
   RenameAgentCommandSchema,
+  RenameProjectCommandSchema,
+  ArchiveProjectCommandSchema,
+  CreateFolderCommandSchema,
   SetTrustCommandSchema,
   SetAgentModelCommandSchema,
 } from '@harness/contracts';
@@ -37,7 +40,7 @@ import { METHOD_CATALOG } from '@harness/runtime-simulated';
 import { execFile } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
-import { FolderError, listFolders } from './folders.js';
+import { FolderError, createFolder, listFolders } from './folders.js';
 import {
   IMAGE_EXTENSIONS,
   ProjectCommandError,
@@ -373,6 +376,39 @@ export function registerProjectRoutes(
     }
   });
 
+  service.post('/api/folders', async (request, reply) => {
+    const command = CreateFolderCommandSchema.safeParse(request.body);
+    if (!command.success) {
+      return reply.code(400).send(invalid('folder name'));
+    }
+    try {
+      const path = createFolder(
+        command.data.parent,
+        command.data.name,
+        projects.folders,
+      );
+      return reply
+        .code(201)
+        .send(FolderListingSchema.parse(listFolders(path, projects.folders)));
+    } catch (error) {
+      if (error instanceof FolderError) {
+        const status =
+          error.code === 'folder_not_found'
+            ? 404
+            : error.code === 'folder_exists'
+              ? 409
+              : 403;
+        return reply.code(status).send(
+          CommandErrorSchema.parse({
+            error: error.message,
+            code: error.code,
+          }),
+        );
+      }
+      throw error;
+    }
+  });
+
   service.post(
     '/api/projects/:projectId/repository',
     async (request, reply) => {
@@ -537,6 +573,40 @@ export function registerProjectRoutes(
       return CommandResponseSchema.parse(result.value);
     },
   );
+
+  service.post('/api/projects/:projectId/name', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    const command = RenameProjectCommandSchema.safeParse(request.body);
+    if (!params.success || !command.success) {
+      return reply.code(400).send(invalid('rename command'));
+    }
+    const result = handle(() =>
+      projects.renameProject(params.data.projectId, command.data),
+    );
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return CommandResponseSchema.parse(result.value);
+  });
+
+  service.post('/api/projects/:projectId/archive', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    const command = ArchiveProjectCommandSchema.safeParse(request.body);
+    if (!params.success || !command.success) {
+      return reply.code(400).send(invalid('archive command'));
+    }
+    const result = handle(() =>
+      projects.archiveProject(params.data.projectId, command.data),
+    );
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return CommandResponseSchema.parse(result.value);
+  });
+
+  service.delete('/api/projects/:projectId', async (request, reply) => {
+    const params = ProjectParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send(invalid('project id'));
+    const result = handle(() => projects.deleteProject(params.data.projectId));
+    if (!result.ok) return reply.code(result.status).send(result.body);
+    return reply.code(204).send();
+  });
 
   service.post('/api/projects/:projectId/trust', async (request, reply) => {
     const params = ProjectParams.safeParse(request.params);

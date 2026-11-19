@@ -1,19 +1,26 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { ProjectListResponse, RuntimeSettings } from '@harness/contracts';
-import { createProject, postMessage } from './api';
+import {
+  archiveProject,
+  createProject,
+  deleteProject,
+  postMessage,
+  renameProject,
+} from './api';
 import { FolderPicker } from './folder-picker';
 import {
   nameFromRequest,
   recentFolders,
   runtimeLabel,
-  runtimeNote,
   statusNotes,
 } from './project-notes';
-import { RuntimeSetup } from './runtime-setup';
+import { AccountChoice } from './runtime-setup';
 
-// The start screen. Two decisions, in order: where is the code, and what
-// to do. With a folder, typing starts an agent on it. Without one, the
-// words go to the coordinator to plan.
+// The start screen asks two things in plain words: what do you want to
+// build or change, and where. On a first visit with no model connected it
+// asks one more — which account agents should use — before anything else.
+
+type Item = ProjectListResponse['projects'][number];
 
 export function Home({
   projects,
@@ -22,6 +29,7 @@ export function Home({
   onCreated,
   onError,
   onRuntimeChanged,
+  onProjectsChanged,
 }: {
   projects: ProjectListResponse['projects'];
   runtime: ProjectListResponse['runtime'];
@@ -29,13 +37,21 @@ export function Home({
   onCreated: (projectId: string) => void;
   onError: (message: string) => void;
   onRuntimeChanged: (settings: RuntimeSettings) => void;
+  onProjectsChanged: () => void;
 }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [folder, setFolder] = useState<string>();
   const [picking, setPicking] = useState(false);
   const [setup, setSetup] = useState(false);
-  const recent = recentFolders(projects);
+  const [accountSettled, setAccountSettled] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const active = projects.filter((item) => !item.project.archivedAt);
+  const archived = projects.filter((item) => item.project.archivedAt);
+  const recent = recentFolders(active);
+  // A first visit: nothing made yet and no model connected.
+  const firstRun =
+    !accountSettled && projects.length === 0 && runtime.mode === 'simulated';
 
   const start = async () => {
     const body = value.trim();
@@ -45,7 +61,7 @@ export function Home({
       const created = await createProject(nameFromRequest(body), folder);
       const projectId = created.project.projection.projectId;
       if (folder) {
-        // A folder means work: the words are the default agent's task.
+        // A folder means work: the words are the first agent's task.
         const agent = Object.values(created.project.projection.agents)[0];
         const agentId = agent?.id;
         const thread = agent
@@ -59,12 +75,12 @@ export function Home({
           });
         }
       } else {
-        const coordinator = Object.values(
-          created.project.projection.threads,
-        ).find((thread) => thread.kind === 'coordinator');
-        if (coordinator) {
+        const planner = Object.values(created.project.projection.threads).find(
+          (thread) => thread.kind === 'coordinator',
+        );
+        if (planner) {
           await postMessage(projectId, 'coordinator', {
-            expectedSequence: coordinator.lastSequence,
+            expectedSequence: planner.lastSequence,
             body,
             intent: 'chat',
           });
@@ -102,30 +118,72 @@ export function Home({
           <strong>Harness</strong>
         </div>
         <h2 className="home-side-title">Projects</h2>
-        {projects.length ? (
+        {active.length ? (
           <ul className="home-projects">
-            {projects.map((item) => (
-              <li key={item.project.id}>
-                <button type="button" onClick={() => onOpen(item.project.id)}>
-                  <span>{item.project.name}</span>
-                  <small>
-                    {item.project.repository
-                      ? `${item.project.repository.name} · `
-                      : ''}
-                    {statusNotes[item.summary.status] ?? item.summary.status}
-                    {item.project.origin === 'demo' ? ' · demo' : ''}
-                  </small>
-                </button>
-              </li>
+            {active.map((item) => (
+              <ProjectRow
+                key={item.project.id}
+                item={item}
+                onOpen={onOpen}
+                onChanged={onProjectsChanged}
+                onError={onError}
+              />
             ))}
           </ul>
         ) : (
-          <p className="home-empty">Nothing yet. Start one on the right.</p>
+          <p className="home-empty">
+            {archived.length
+              ? 'Nothing open. Start one on the right.'
+              : 'Your projects will be listed here.'}
+          </p>
         )}
+        {archived.length ? (
+          <>
+            <button
+              type="button"
+              className="home-side-toggle"
+              aria-expanded={showArchived}
+              onClick={() => setShowArchived((open) => !open)}
+            >
+              {showArchived ? '▾' : '▸'} Archived ({archived.length})
+            </button>
+            {showArchived ? (
+              <ul className="home-projects is-archived">
+                {archived.map((item) => (
+                  <ProjectRow
+                    key={item.project.id}
+                    item={item}
+                    onOpen={onOpen}
+                    onChanged={onProjectsChanged}
+                    onError={onError}
+                  />
+                ))}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
       </aside>
       <main className="home-main">
-        <section className="home-where" aria-label="Where is the code?">
-          <h2 className="home-step">Where is the code?</h2>
+        <header className="home-intro">
+          <h1>What do you want to build or change?</h1>
+          <p>
+            Say it in your own words. Agents do the work in a folder you choose,
+            ask before they run or change anything, and show you every change
+            afterwards.
+          </p>
+        </header>
+
+        {firstRun ? (
+          <AccountChoice
+            onSaved={(settings) => {
+              onRuntimeChanged(settings);
+              setAccountSettled(true);
+            }}
+          />
+        ) : null}
+
+        <section className="home-where" aria-label="Where?">
+          <h2 className="home-step">Where?</h2>
           <div className="home-chips">
             {recent.map((path) => (
               <button
@@ -161,7 +219,7 @@ export function Home({
               className="chip chip-action"
               onClick={() => setPicking(true)}
             >
-              Choose a folder…
+              Choose or make a folder…
             </button>
             <button
               type="button"
@@ -169,7 +227,7 @@ export function Home({
               aria-pressed={folder === undefined}
               onClick={() => setFolder(undefined)}
             >
-              No folder — just plan
+              Just plan it for now
             </button>
           </div>
           {picking ? (
@@ -190,7 +248,7 @@ export function Home({
             event.preventDefault();
             void start();
           }}
-          aria-label={folder ? 'Start work' : 'Start a project'}
+          aria-label={folder ? 'Start work' : 'Start planning'}
         >
           <span className="composer-rail" aria-hidden="true" />
           <div className="composer-field">
@@ -200,12 +258,10 @@ export function Home({
               value={value}
               placeholder={
                 folder
-                  ? `What should the agent do in ${folderName}?`
-                  : 'What are we building?'
+                  ? `What should change in ${folderName}?`
+                  : 'For example: a page where customers can download their invoices'
               }
-              aria-label={
-                folder ? 'What should the agent do?' : 'What are we building?'
-              }
+              aria-label="What do you want to build or change?"
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={onKey}
               disabled={busy}
@@ -216,34 +272,33 @@ export function Home({
             className="composer-send"
             disabled={busy || !value.trim()}
           >
-            {folder ? 'Start work' : 'Plan'} <kbd>⏎</kbd>
+            {folder ? 'Start' : 'Plan it'} <kbd>⏎</kbd>
           </button>
         </form>
 
         <p className="home-hint">
           {folder
-            ? 'Enter opens the project on an agent pane and starts this as its first task. You approve what it wants to run or change.'
-            : 'Enter opens the project on the coordinator, which plans it with you. Attach a folder any time to start work.'}
+            ? `An agent starts on this in ${folderName} right away. It asks before running commands or changing files.`
+            : 'The planner talks it through with you and drafts the tasks. Nothing is changed until you pick a folder.'}
         </p>
 
-        <div className="home-runtime">
-          <span
-            className={`mode-badge mode-${runtime.mode}`}
-            title={runtimeNote(runtime)}
-          >
-            {runtimeLabel(runtime)}
-          </span>
-          <span className="home-runtime-note">{runtimeNote(runtime)}</span>
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => setSetup((open) => !open)}
-          >
-            {setup ? 'close' : 'change'}
-          </button>
-        </div>
-        {setup ? (
-          <RuntimeSetup
+        {firstRun ? null : (
+          <div className="home-runtime">
+            <span>
+              Agents: <strong>{runtimeLabel(runtime)}</strong>
+            </span>
+            <button
+              type="button"
+              className="link-button"
+              aria-expanded={setup}
+              onClick={() => setSetup((open) => !open)}
+            >
+              {setup ? 'close' : 'change'}
+            </button>
+          </div>
+        )}
+        {setup && !firstRun ? (
+          <AccountChoice
             onSaved={(settings) => {
               onRuntimeChanged(settings);
               setSetup(false);
@@ -253,5 +308,184 @@ export function Home({
         ) : null}
       </main>
     </div>
+  );
+}
+
+// One project in the list: open it, or from its menu rename, archive or
+// restore, and delete (asked twice, because it cannot be undone).
+function ProjectRow({
+  item,
+  onOpen,
+  onChanged,
+  onError,
+}: {
+  item: Item;
+  onOpen: (projectId: string) => void;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const { project, summary } = item;
+  const [mode, setMode] = useState<'idle' | 'menu' | 'rename' | 'delete'>(
+    'idle',
+  );
+  const [name, setName] = useState(project.name);
+  const [busy, setBusy] = useState(false);
+
+  const act = async (work: () => Promise<unknown>, failed: string) => {
+    setBusy(true);
+    try {
+      await work();
+      setMode('idle');
+      onChanged();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : failed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (mode === 'rename') {
+    return (
+      <li className="home-project is-editing">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const next = name.trim();
+            if (!next || next === project.name) {
+              setMode('idle');
+              return;
+            }
+            void act(
+              () => renameProject(project.id, summary.lastSequence, next),
+              'The project was not renamed.',
+            );
+          }}
+        >
+          <input
+            autoFocus
+            value={name}
+            maxLength={120}
+            aria-label="Project name"
+            disabled={busy}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setName(project.name);
+                setMode('idle');
+              }
+            }}
+          />
+          <button
+            type="submit"
+            className="primary-action small"
+            disabled={busy}
+          >
+            Save
+          </button>
+        </form>
+      </li>
+    );
+  }
+
+  if (mode === 'delete') {
+    return (
+      <li className="home-project is-confirming" role="alertdialog">
+        <p>
+          Delete <strong>{project.name}</strong> and its whole history? This
+          cannot be undone. Files in its folder are not touched.
+        </p>
+        <div className="home-project-actions">
+          <button
+            type="button"
+            className="danger-action small"
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () => deleteProject(project.id),
+                'The project was not deleted.',
+              )
+            }
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => setMode('idle')}
+          >
+            Keep it
+          </button>
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li className={`home-project ${mode === 'menu' ? 'has-menu' : ''}`}>
+      <button
+        type="button"
+        className="home-project-open"
+        onClick={() => onOpen(project.id)}
+      >
+        <span>{project.name}</span>
+        <small>
+          {project.repository ? `${project.repository.name} · ` : ''}
+          {statusNotes[summary.status] ?? summary.status}
+          {project.origin === 'demo' ? ' · demo' : ''}
+        </small>
+      </button>
+      <button
+        type="button"
+        className="home-project-more"
+        aria-label={`More for ${project.name}`}
+        aria-expanded={mode === 'menu'}
+        onClick={() => setMode(mode === 'menu' ? 'idle' : 'menu')}
+      >
+        ⋯
+      </button>
+      {mode === 'menu' ? (
+        <div className="home-project-menu" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setName(project.name);
+              setMode('rename');
+            }}
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={busy}
+            onClick={() =>
+              void act(
+                () =>
+                  archiveProject(
+                    project.id,
+                    summary.lastSequence,
+                    !project.archivedAt,
+                  ),
+                project.archivedAt
+                  ? 'The project was not restored.'
+                  : 'The project was not archived.',
+              )
+            }
+          >
+            {project.archivedAt ? 'Restore' : 'Archive'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            onClick={() => setMode('delete')}
+          >
+            Delete…
+          </button>
+        </div>
+      ) : null}
+    </li>
   );
 }

@@ -39,7 +39,7 @@ export function liveTargetId(target: LiveTarget): string {
 }
 
 export function liveTargetTitle(target: LiveTarget): string {
-  return target.kind === 'agent' ? target.agent.name : 'Coordinator';
+  return target.kind === 'agent' ? target.agent.name : 'Planner';
 }
 
 // Which conversation a project opens on: wherever the person's words

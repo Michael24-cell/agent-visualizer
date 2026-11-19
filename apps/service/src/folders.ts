@@ -1,10 +1,10 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { FolderListing, RepositoryRef } from '@harness/contracts';
 
-// Local folders a project may be attached to. Everything is read-only here:
-// the service never writes to an attached folder in this increment.
+// Local folders a project may be attached to. Read-only, with one
+// exception: making a new, empty folder for a project to start in.
 //
 // Attachable folders live under the allowed root (the user's home directory
 // unless HARNESS_FOLDER_ROOT says otherwise). Hidden folders are skipped in
@@ -12,7 +12,7 @@ import type { FolderListing, RepositoryRef } from '@harness/contracts';
 
 export class FolderError extends Error {
   constructor(
-    readonly code: 'folder_not_found' | 'folder_not_allowed',
+    readonly code: 'folder_not_found' | 'folder_not_allowed' | 'folder_exists',
     message: string,
   ) {
     super(message);
@@ -117,4 +117,45 @@ export function listFolders(
     );
   const parent = path === root ? undefined : dirname(path);
   return { path, ...(parent ? { parent } : {}), entries };
+}
+
+// Makes one new, empty folder inside `parent`. The parent must already be
+// under the allowed root, the name is a single path segment, and an
+// existing folder is never reused or overwritten.
+export function createFolder(
+  parent: string,
+  name: string,
+  options: FolderOptions = {},
+): string {
+  const root = allowedRoot(options);
+  const base = resolve(parent);
+  const clean = name.trim();
+  if (!clean || /[/\\\0]/.test(clean) || clean === '.' || clean === '..') {
+    throw new FolderError(
+      'folder_not_allowed',
+      'A folder name is one name, without slashes.',
+    );
+  }
+  if (!within(root, base)) {
+    throw new FolderError(
+      'folder_not_allowed',
+      `New folders can only be made under ${root}.`,
+    );
+  }
+  if (!isDirectory(base)) {
+    throw new FolderError('folder_not_found', `${base} is not a folder.`);
+  }
+  const path = join(base, clean);
+  if (!within(root, path) || dirname(path) !== base) {
+    throw new FolderError('folder_not_allowed', 'That name is not allowed.');
+  }
+  try {
+    mkdirSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new FolderError('folder_exists', `${clean} already exists here.`);
+    }
+    throw error;
+  }
+  return path;
 }

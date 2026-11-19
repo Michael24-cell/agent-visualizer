@@ -279,7 +279,7 @@ export function MapView({
               <button
                 type="button"
                 className="map-title"
-                title="Open in Artifacts"
+                title="Open in Files"
                 onClick={() => onOpenArtifact(file.path)}
               >
                 {file.path}
