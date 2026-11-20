@@ -127,7 +127,9 @@ describe('the Harness MCP server', () => {
       request: 'Build an invoice download page',
     });
     expect(drafted.isError).toBe(false);
-    expect(drafted.text).toMatch(/^Planner: Plan v1 is ready/);
+    expect(drafted.text).toMatch(
+      /^Planner: Plan v1 is ready: .+ Call next_task to start it, or draft_plan again with what to change\./,
+    );
     expect(drafted.text).toMatch(/not started — next_task hands it to you/);
 
     const overview = await call('get_overview');

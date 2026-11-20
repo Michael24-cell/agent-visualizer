@@ -3618,7 +3618,12 @@ export class ProjectService {
       step({ kind: 'say', body: comparison });
       const finish: AgentStepIntent =
         command.outcome === 'done'
-          ? { kind: 'finish', reason: command.summary.slice(0, 300) }
+          ? {
+              kind: 'finish',
+              reason: command.summary.slice(0, 300),
+              // The summary was posted first, in the tool's name.
+              alreadySaid: true,
+            }
           : { kind: 'fail', reason: command.summary.slice(0, 300) };
       step(this.guardFinish(batch, batch.current.tasks[task.id]!, finish));
       if (batch.current.tasks[task.id]?.state === 'done') {

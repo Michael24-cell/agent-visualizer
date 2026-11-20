@@ -115,6 +115,15 @@ export function describePlan(project: ProjectResponse): string {
   ].join('\n');
 }
 
+// The Planner speaks to the person in the app ("Assign to agents"); here
+// the reader is the tool, whose next steps are tool calls.
+export function forTool(reply: string): string {
+  return reply.replace(
+    /Assign to agents, or tell me what (else )?to change\./,
+    'Call next_task to start it, or draft_plan again with what to change.',
+  );
+}
+
 const text = (body: string, isError = false) => ({
   content: [{ type: 'text' as const, text: body }],
   ...(isError ? { isError: true } : {}),
@@ -243,7 +252,7 @@ export function createHarnessServer(options: ServerOptions = {}): McpServer {
         (await harness.createProject(where));
       const answer = await harness.askPlanner(project, request);
       return text(
-        `Planner: ${answer.reply}\n\n${describePlan(answer.project)}`,
+        `Planner: ${forTool(answer.reply)}\n\n${describePlan(answer.project)}`,
       );
     }),
   );

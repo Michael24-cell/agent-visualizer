@@ -1,3 +1,9 @@
+import {
+  notificationsSupported,
+  useAttentionSignals,
+  useNotifyPreference,
+  useProjectSync,
+} from './project-sync';
 import { useState } from 'react';
 import type { ProjectListResponse, ProjectResponse } from '@harness/contracts';
 import {
@@ -5,7 +11,6 @@ import {
   createAgent,
   editPlanSection,
   listProjects,
-  readProject,
   setTrust,
 } from './api';
 import {
@@ -203,14 +208,11 @@ export function Workspace({
       .then((list) => onProjects(list.projects))
       .catch(() => undefined);
   };
-  const refresh = async () => {
-    try {
-      updateProject(await readProject(project.projection.projectId));
-      onNotice('Refreshed.');
-    } catch (error) {
-      onError(error instanceof Error ? error.message : 'Could not refresh.');
-    }
-  };
+  // Stays current without a Refresh button, and says in the tab title
+  // (and, if asked, a notification) when something needs you or ends.
+  useProjectSync(project, updateProject);
+  const [notify, toggleNotify] = useNotifyPreference();
+  useAttentionSignals(project, notify);
   const show = (id: string) => {
     const index = open.indexOf(id);
     if (index >= 0) {
@@ -319,13 +321,23 @@ export function Workspace({
               <span aria-hidden="true">!</span> {attention.label}
             </button>
           ) : null}
-          <button
-            type="button"
-            className="quiet-button"
-            onClick={() => void refresh()}
-          >
-            Refresh
-          </button>
+          {notificationsSupported() ? (
+            <button
+              type="button"
+              className="quiet-button"
+              aria-pressed={notify}
+              title={
+                notify
+                  ? 'You get a notification when an agent needs you or finishes while this tab is in the background.'
+                  : 'Get a notification when an agent needs you or finishes while this tab is in the background.'
+              }
+              onClick={() => {
+                void toggleNotify().then(() => undefined);
+              }}
+            >
+              {notify ? 'Notifying you' : 'Notify me'}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -422,7 +434,8 @@ export function Workspace({
                     <span className="ws-list-name">{targetName(target)}</span>
                     <small>
                       {target.kind === 'agent'
-                        ? workLabels[target.agent.work]
+                        ? (outsideNote(project, target.agent) ??
+                          workLabels[target.agent.work])
                         : 'plans with you'}
                     </small>
                   </button>
@@ -581,4 +594,22 @@ export function Workspace({
       ) : null}
     </div>
   );
+}
+
+// An agent whose task an outside tool is doing says so in the list.
+function outsideNote(
+  project: ProjectResponse,
+  agent: { readonly currentTaskId?: string | undefined; readonly work: string },
+): string | undefined {
+  if (!['waiting', 'working', 'needs_you'].includes(agent.work)) return;
+  const task = agent.currentTaskId
+    ? project.projection.tasks[agent.currentTaskId as never]
+    : undefined;
+  const outside = task?.outside;
+  if (!outside) return;
+  return outside.takenAt
+    ? `With ${outside.client}`
+    : agent.work === 'waiting'
+      ? `Waiting · for ${outside.client}`
+      : `Ready for ${outside.client}`;
 }

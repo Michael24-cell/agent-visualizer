@@ -14,6 +14,23 @@ type Screen =
   | { kind: 'home' }
   | { kind: 'project'; project: ProjectResponse };
 
+// The open project is kept in the address (#project=…), so a reload or
+// a bookmark comes back to it instead of the start screen.
+function projectInAddress(): string | undefined {
+  const match = /^#project=([\w-]+)$/.exec(window.location.hash);
+  return match?.[1];
+}
+
+function setAddress(projectId: string | undefined) {
+  const next = projectId ? `#project=${projectId}` : '';
+  if (window.location.hash === next) return;
+  window.history.replaceState(
+    null,
+    '',
+    `${window.location.pathname}${window.location.search}${next}`,
+  );
+}
+
 export function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' });
   const [projects, setProjects] = useState<ProjectListResponse['projects']>([]);
@@ -43,11 +60,25 @@ export function App() {
   useEffect(() => {
     let active = true;
     void listProjects()
-      .then((list) => {
+      .then(async (list) => {
         if (!active) return;
         setProjects(list.projects);
         setRuntime(list.runtime);
-        setScreen({ kind: 'home' });
+        const remembered = projectInAddress();
+        if (
+          remembered &&
+          list.projects.some((item) => item.project.id === remembered)
+        ) {
+          try {
+            const project = await readProject(remembered);
+            if (active) setScreen({ kind: 'project', project });
+            return;
+          } catch {
+            // Fall through to the start screen.
+          }
+        }
+        setAddress(undefined);
+        if (active) setScreen({ kind: 'home' });
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -85,6 +116,7 @@ export function App() {
     try {
       const project = await readProject(projectId);
       setScreen({ kind: 'project', project });
+      setAddress(projectId);
       setActionError(undefined);
     } catch (error) {
       setActionError(
@@ -99,6 +131,7 @@ export function App() {
     } catch {
       // Keep the list we have.
     }
+    setAddress(undefined);
     setScreen({ kind: 'home' });
   };
 

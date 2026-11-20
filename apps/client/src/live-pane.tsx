@@ -571,7 +571,9 @@ function ToolRowView({
             <span className="tool-target">{output.title}</span>
           )}
           {output.digest &&
-          !/^(Wrote|Edited|Created|Edit applied)/.test(output.digest) ? (
+          !/^(Wrote|Edited|Created|Edit applied)/.test(output.digest) &&
+          // A content hash means nothing to a person.
+          !/^sha256:/.test(output.digest) ? (
             <span className="tool-note">{output.digest}</span>
           ) : null}
           {output.diff ? (

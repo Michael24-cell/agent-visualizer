@@ -127,7 +127,9 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
           ...base,
           kind: 'file',
           title: path,
-          detail: output.diff ?? output.digest,
+          ...(output.diff || !/^sha256:/.test(output.digest)
+            ? { detail: output.diff ?? output.digest }
+            : {}),
           target: { kind: 'file', path },
         });
         break;

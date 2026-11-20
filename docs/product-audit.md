@@ -134,6 +134,25 @@ Steps 3 and 4's dead ends are fixed. Steps 1, 2, 5 and 6 are the work.
   Overview. One fewer noun.
 - "Method catalog" as a concept: keep three presets under _Rules_.
 
+## Audit, 2026-11-19
+
+A walk through the app as a new user, then an outside tool (the MCP server)
+working on the same project:
+
+| Found                                                                                     | Now                                                          |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Work done elsewhere (closed panes, Claude Code through MCP) did not appear until Refresh. | **Fixed:** the project keeps itself current.                 |
+| Nothing said when an agent needed you or finished; you had to watch.                      | **Fixed:** tab title, optional notifications.                |
+| Reloading the page dropped you on the start screen.                                       | **Fixed:** the address remembers the open project.           |
+| The sidebar said "Working" for a task Claude Code was doing.                              | **Fixed:** "With Claude Code" / "Ready for Claude Code".     |
+| Output rows showed `sha256:…` hashes.                                                     | **Fixed:** hidden in panes and History.                      |
+| The folder picker called a folder with files in it "Empty… start fresh here".             | **Fixed:** "No folders inside"; the button names the folder. |
+| The Planner told outside tools to "Assign to agents" (a button they cannot press).        | **Fixed:** they are told to call next_task or draft_plan.    |
+| An outside tool's summary was posted twice.                                               | **Fixed.**                                                   |
+| Clicking a folder name opens it, so the next "Use" picks a folder inside it.              | Open: worth a clearer picker.                                |
+| With a folder chosen, the first request goes straight to one agent and skips the Planner. | Open: a product choice to revisit.                           |
+| Practice agents need "Next step" clicks; nothing on screen says why.                      | Open.                                                        |
+
 ## The order from here
 
 Each is one reviewable change with tests.
@@ -147,8 +166,14 @@ Each is one reviewable change with tests.
    Changes → History (display only; ids unchanged). Delete is real: a
    purge migration lets only a deleted project's rows leave the
    append-only tables, and it is refused while agents are working.
-3. **Tell me when it needs me**: tab title and optional notification on
-   ask / done / failed; drop the Refresh button.
+3. ~~**Tell me when it needs me**: tab title and optional notification on
+   ask / done / failed; drop the Refresh button.~~ — done 2026-11-19. The
+   open project now keeps itself current (a cheap check for new events
+   every 1.5s, 5s in the background), so work from closed panes and from
+   outside tools shows up on its own; Refresh is gone. The tab title
+   counts what waits on you ("(2) Shop — Harness") and marks what ended
+   while you were away (✓ / ✕); "Notify me" adds system notifications.
+   The address keeps the open project, so a reload stays put.
 4. **Other agent tools can use it (MCP server).** A small local
    program that Claude Code, Codex or Cursor start themselves; it passes
    their calls to this service on the same computer. No hosting, no new

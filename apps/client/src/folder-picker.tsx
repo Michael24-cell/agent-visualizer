@@ -26,7 +26,7 @@ export function FolderPicker({
     if (!listing || !name) return;
     setError(undefined);
     try {
-      // Open the new folder so "Use this folder" picks it.
+      // Open the new folder so the Use button picks it.
       setListing(await createFolder(listing.path, name));
       setNaming(false);
       setNewName('');
@@ -162,7 +162,7 @@ export function FolderPicker({
         ))}
         {listing && listing.entries.length === 0 ? (
           <li className="folder-empty">
-            Empty. Use this folder to start fresh here.
+            No folders inside. Use this one, or make a new folder.
           </li>
         ) : null}
       </ul>
@@ -200,7 +200,7 @@ export function FolderPicker({
             className="primary-action small"
             onClick={() => onPick(listing.path)}
           >
-            Use this folder
+            Use “{listing.path.split('/').pop() || listing.path}”
           </button>
         ) : null}
         <button type="button" className="quiet-button" onClick={onCancel}>
