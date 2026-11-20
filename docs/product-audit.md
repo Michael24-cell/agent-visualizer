@@ -139,19 +139,19 @@ Steps 3 and 4's dead ends are fixed. Steps 1, 2, 5 and 6 are the work.
 A walk through the app as a new user, then an outside tool (the MCP server)
 working on the same project:
 
-| Found                                                                                     | Now                                                          |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Work done elsewhere (closed panes, Claude Code through MCP) did not appear until Refresh. | **Fixed:** the project keeps itself current.                 |
-| Nothing said when an agent needed you or finished; you had to watch.                      | **Fixed:** tab title, optional notifications.                |
-| Reloading the page dropped you on the start screen.                                       | **Fixed:** the address remembers the open project.           |
-| The sidebar said "Working" for a task Claude Code was doing.                              | **Fixed:** "With Claude Code" / "Ready for Claude Code".     |
-| Output rows showed `sha256:…` hashes.                                                     | **Fixed:** hidden in panes and History.                      |
-| The folder picker called a folder with files in it "Empty… start fresh here".             | **Fixed:** "No folders inside"; the button names the folder. |
-| The Planner told outside tools to "Assign to agents" (a button they cannot press).        | **Fixed:** they are told to call next_task or draft_plan.    |
-| An outside tool's summary was posted twice.                                               | **Fixed.**                                                   |
-| Clicking a folder name opens it, so the next "Use" picks a folder inside it.              | Open: worth a clearer picker.                                |
-| With a folder chosen, the first request goes straight to one agent and skips the Planner. | Open: a product choice to revisit.                           |
-| Practice agents need "Next step" clicks; nothing on screen says why.                      | Open.                                                        |
+| Found                                                                                     | Now                                                                     |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Work done elsewhere (closed panes, Claude Code through MCP) did not appear until Refresh. | **Fixed:** the project keeps itself current.                            |
+| Nothing said when an agent needed you or finished; you had to watch.                      | **Fixed:** tab title, optional notifications.                           |
+| Reloading the page dropped you on the start screen.                                       | **Fixed:** the address remembers the open project.                      |
+| The sidebar said "Working" for a task Claude Code was doing.                              | **Fixed:** "With Claude Code" / "Ready for Claude Code".                |
+| Output rows showed `sha256:…` hashes.                                                     | **Fixed:** hidden in panes and History.                                 |
+| The folder picker called a folder with files in it "Empty… start fresh here".             | **Fixed:** "No folders inside"; the button names the folder.            |
+| The Planner told outside tools to "Assign to agents" (a button they cannot press).        | **Fixed:** they are told to call next_task or draft_plan.               |
+| An outside tool's summary was posted twice.                                               | **Fixed.**                                                              |
+| Clicking a folder name opened it, so the next "Use" picked a folder inside it.            | **Fixed:** click selects, › opens; one button names the folder you get. |
+| With a folder chosen, the first request goes straight to one agent and skips the Planner. | Open: a product choice to revisit.                                      |
+| Practice agents need "Next step" clicks; nothing on screen says why.                      | Open.                                                                   |
 
 ## The order from here
 

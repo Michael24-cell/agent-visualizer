@@ -5,6 +5,10 @@ import { createFolder, listFolders } from './api';
 // Browse folders under the allowed root (your home directory) and pick one,
 // or make a new empty one to start from. Repositories sort first and show
 // their mark. You can also paste a path.
+//
+// Like a file dialog: clicking a folder selects it, › (or a double-click)
+// opens it, and the one button at the bottom names exactly the folder you
+// will get — the selected one, or the one you are in.
 
 export function FolderPicker({
   initialPath,
@@ -20,6 +24,7 @@ export function FolderPicker({
   const [typed, setTyped] = useState('');
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState('');
+  const [selected, setSelected] = useState<string>();
 
   const makeFolder = async () => {
     const name = newName.trim();
@@ -28,6 +33,7 @@ export function FolderPicker({
     try {
       // Open the new folder so the Use button picks it.
       setListing(await createFolder(listing.path, name));
+      setSelected(undefined);
       setNaming(false);
       setNewName('');
     } catch (cause) {
@@ -39,6 +45,7 @@ export function FolderPicker({
 
   const load = (path?: string) => {
     setError(undefined);
+    setSelected(undefined);
     void listFolders(path)
       .then(setListing)
       .catch((cause: unknown) =>
@@ -141,8 +148,18 @@ export function FolderPicker({
       {error ? <p className="composer-feedback">{error}</p> : null}
       <ul className="folder-list">
         {listing?.entries.map((entry) => (
-          <li key={entry.path}>
-            <button type="button" onClick={() => load(entry.path)}>
+          <li
+            key={entry.path}
+            className={selected === entry.path ? 'is-selected' : ''}
+          >
+            <button
+              type="button"
+              aria-pressed={selected === entry.path}
+              onClick={() =>
+                setSelected(selected === entry.path ? undefined : entry.path)
+              }
+              onDoubleClick={() => load(entry.path)}
+            >
               <span
                 className={`folder-mark ${entry.isRepository ? 'is-repo' : ''}`}
                 aria-hidden="true"
@@ -150,13 +167,18 @@ export function FolderPicker({
                 {entry.isRepository ? '⎇' : '▸'}
               </span>
               {entry.name}
+              {entry.isRepository ? (
+                <small className="folder-tag">git</small>
+              ) : null}
             </button>
             <button
               type="button"
-              className="secondary-action small"
-              onClick={() => onPick(entry.path)}
+              className="folder-open"
+              aria-label={`Open ${entry.name}`}
+              title={`Open ${entry.name}`}
+              onClick={() => load(entry.path)}
             >
-              Use
+              ›
             </button>
           </li>
         ))}
@@ -198,9 +220,10 @@ export function FolderPicker({
           <button
             type="button"
             className="primary-action small"
-            onClick={() => onPick(listing.path)}
+            title={selected ?? listing.path}
+            onClick={() => onPick(selected ?? listing.path)}
           >
-            Use “{listing.path.split('/').pop() || listing.path}”
+            Use “{folderName(selected ?? listing.path)}”
           </button>
         ) : null}
         <button type="button" className="quiet-button" onClick={onCancel}>
@@ -210,3 +233,5 @@ export function FolderPicker({
     </div>
   );
 }
+
+const folderName = (path: string) => path.split('/').pop() || path;
