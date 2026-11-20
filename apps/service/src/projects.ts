@@ -49,6 +49,8 @@ import {
   type RenameAgentCommand,
   type RenameProjectCommand,
   type ArchiveProjectCommand,
+  type TakeTaskCommand,
+  type ReportTaskCommand,
   type SetTrustCommand,
   type PostMessageCommand,
   type ProjectEvent,
@@ -116,6 +118,14 @@ import {
 } from './element-search.js';
 import { FolderError, inspectFolder, type FolderOptions } from './folders.js';
 import { draftPlan, type ModelPlanner } from './model-planner.js';
+import {
+  OUTSIDE_ADAPTER,
+  changesSince,
+  compareWithGit,
+  diffCounts,
+  headCommit,
+  outsideBrief,
+} from './outside.js';
 
 export class ProjectCommandError extends Error {
   constructor(
@@ -326,6 +336,36 @@ export interface ProjectServiceOptions {
   readonly frames?: FrameSource;
   // The connected model as Planner. Absent: the built-in keyword planner.
   readonly planner?: ModelPlanner | undefined;
+}
+
+const OVERVIEW_LABELS: Record<string, string> = {
+  goal: 'Goal',
+  scope: 'Scope',
+  constraints: 'Constraints',
+  doneMeans: 'Done means',
+  checks: 'Checks',
+  audience: 'Audience',
+};
+
+export interface OutsideTake {
+  readonly status:
+    'taken' | 'continuing' | 'waiting' | 'no_plan' | 'assigned_in_app';
+  readonly message: string;
+  readonly task?: {
+    readonly id: string;
+    readonly title: string;
+    readonly objective: string;
+    readonly requiredChecks: readonly string[];
+    readonly state: string;
+  };
+  // The full instructions for the tool, when there is a task.
+  readonly brief?: string;
+}
+
+export interface OutsideReport {
+  readonly state: string;
+  readonly message: string;
+  readonly comparison: string;
 }
 
 // What a Planner reply was drafted with, said beside the plan.
@@ -669,7 +709,12 @@ export class ProjectService {
       const task = agent.currentTaskId
         ? projection.tasks[agent.currentTaskId]
         : undefined;
-      if (!task || task.state !== 'working' || this.liveRuns.has(task.id))
+      if (
+        !task ||
+        task.outside ||
+        task.state !== 'working' ||
+        this.liveRuns.has(task.id)
+      )
         continue;
       this.startLiveRun(projectId, agent, task);
     }
@@ -909,6 +954,8 @@ export class ProjectService {
           ? projection.tasks[agent.currentTaskId]
           : undefined;
         if (!task || !['working', 'needs_you'].includes(task.state)) continue;
+        // An outside tool's work did not stop with the harness.
+        if (task.outside) continue;
         const meta = {
           taskId: task.id,
           agentId: agent.id,
@@ -1582,6 +1629,17 @@ export class ProjectService {
       const currentTask = agent.currentTaskId
         ? batch.current.tasks[agent.currentTaskId]
         : undefined;
+      if (
+        currentTask?.outside &&
+        ['waiting', 'working', 'needs_you'].includes(currentTask.state)
+      ) {
+        batch.post(
+          thread,
+          systemAuthor,
+          `${currentTask.outside.client} is doing "${currentTask.title}" outside the harness, so it cannot read this. Tell it there; what it reports shows up here.`,
+        );
+        return;
+      }
       if (this.isLive) {
         this.replyLive(
           batch,
@@ -2239,6 +2297,8 @@ export class ProjectService {
     suffix: string,
     plan: Plan,
     proposalId: string | undefined,
+    // Handed to an agent tool outside the harness instead of its own agents.
+    outside?: { readonly client: string },
   ) {
     const coordinator = Object.values(batch.current.threads).find(
       (thread) => thread.kind === 'coordinator',
@@ -2293,6 +2353,7 @@ export class ProjectService {
             expectedOutputs: row.expectedOutputs,
             requiredChecks: row.requiredChecks,
             ...(row.modelTier ? { modelTier: row.modelTier } : {}),
+            ...(outside ? { outside: { client: outside.client } } : {}),
             state: dependsOn.length ? 'waiting' : 'working',
             createdAtSequence: batch.nextSequence(),
           },
@@ -2311,9 +2372,13 @@ export class ProjectService {
       batch.post(
         thread,
         coordinatorAuthor,
-        dependsOn.length
-          ? `Assigned: ${row.title}. Waiting on ${dependsOn.map((id) => batch.current.tasks[id]!.title).join(', ')} first.`
-          : `Assigned: ${row.title}. Starting now.`,
+        outside
+          ? dependsOn.length
+            ? `Handed to ${outside.client}: ${row.title}. Ready once ${dependsOn.map((id) => batch.current.tasks[id]!.title).join(', ')} is done.`
+            : `Handed to ${outside.client}: ${row.title}. It reports back here.`
+          : dependsOn.length
+            ? `Assigned: ${row.title}. Waiting on ${dependsOn.map((id) => batch.current.tasks[id]!.title).join(', ')} first.`
+            : `Assigned: ${row.title}. Starting now.`,
         'chat',
         { taskId, fromThreadId: coordinator.id },
       );
@@ -2326,9 +2391,17 @@ export class ProjectService {
     batch.post(
       coordinator,
       coordinatorAuthor,
-      `Assigned plan v${plan.version}: ${plan.tasks
-        .map((row) => `${row.agentName} → ${row.title}`)
-        .join('; ')}. Each agent works in its own pane; use Next step there.`,
+      outside
+        ? `Handed plan v${plan.version} to ${outside.client}: ${plan.tasks
+            .map((row) => row.title)
+            .join(
+              '; ',
+            )}. It takes one task at a time and reports each one back; the changes show up in Review.`
+        : `Assigned plan v${plan.version}: ${plan.tasks
+            .map((row) => `${row.agentName} → ${row.title}`)
+            .join(
+              '; ',
+            )}. Each agent works in its own pane; use Next step there.`,
       'chat',
       proposalId ? { proposalId } : undefined,
     );
@@ -2755,6 +2828,15 @@ export class ProjectService {
         agent.lastSequence,
         command.expectedSequence,
       );
+      const outside = agent.currentTaskId
+        ? projection.tasks[agent.currentTaskId]?.outside
+        : undefined;
+      if (outside) {
+        throw new ProjectCommandError(
+          'invalid_transition',
+          `${outside.client} is doing this task and reports back on its own; there is no step to take here.`,
+        );
+      }
       if (this.isLive) {
         throw new ProjectCommandError(
           'invalid_transition',
@@ -3227,6 +3309,334 @@ export class ProjectService {
 
   // The demo project exists only when the service is started with the
   // flag. It is created once and then behaves like any user project.
+  // --- Outside agent tools (the MCP server) -------------------------------
+
+  // Gives an outside agent tool its next task. When no plan has been
+  // handed out yet, the open plan is approved and handed to the tool (the
+  // person asked for this in the tool). A task the tool already took and
+  // has not reported is given again, so a tool that lost track can resume.
+  async takeOutsideTask(
+    projectId: ProjectId,
+    command: TakeTaskCommand,
+  ): Promise<OutsideTake> {
+    const before = this.requireProjection(projectId);
+    const folder = before.project.repository?.path;
+    if (!folder) {
+      throw new ProjectCommandError(
+        'folder_required',
+        'Attach a folder to this project in Harness before handing work to another tool.',
+      );
+    }
+    const replay = this.store.getReceipt(command.commandId);
+    if (replay) {
+      if (replay.projectId !== projectId) {
+        throw new ProjectCommandError(
+          'project_mismatch',
+          `Command ${command.commandId} belongs to another project.`,
+        );
+      }
+      const taken = this.store
+        .listEvents(projectId, replay.receipt.firstSequence - 1)
+        .find(
+          (event) =>
+            event.type === 'task.taken' &&
+            event.sequence <= replay.receipt.lastSequence,
+        );
+      const taskId =
+        taken?.type === 'task.taken' ? taken.payload.taskId : undefined;
+      const task = taskId ? before.tasks[taskId] : undefined;
+      if (task) return this.outsideOffer(before, task, 'taken');
+    }
+    const open = (task: AgentTask) =>
+      task.outside && ['waiting', 'working', 'needs_you'].includes(task.state);
+    const ordered = Object.values(before.tasks)
+      .filter(open)
+      .sort((a, b) => a.createdAtSequence - b.createdAtSequence);
+    const mine = ordered.find(
+      (task) =>
+        task.outside?.takenAt &&
+        task.outside.client === command.client &&
+        task.state === 'working',
+    );
+    if (mine) return this.outsideOffer(before, mine, 'continuing');
+
+    const ready = ordered.find(
+      (task) => task.state === 'working' && !task.outside?.takenAt,
+    );
+    const plan = ready ? undefined : this.livePlan(before);
+    if (!ready && !plan) {
+      if (ordered.length) {
+        const first = ordered[0]!;
+        const blocking = first.dependsOn
+          .map((id) => before.tasks[id])
+          .filter((task) => task && task.state !== 'done')
+          .map((task) => `"${task!.title}"`);
+        return {
+          status: 'waiting',
+          message: first.outside?.takenAt
+            ? `"${first.title}" is with ${first.outside.client} and is ${first.state.replace('_', ' ')}. Nothing else is ready.`
+            : `Nothing is ready yet. "${first.title}" waits on ${blocking.join(', ') || 'earlier work'}.`,
+        };
+      }
+      const assignedInApp = Object.values(before.tasks).some(
+        (task) =>
+          !task.outside &&
+          ['waiting', 'working', 'needs_you'].includes(task.state),
+      );
+      return {
+        status: assignedInApp ? 'assigned_in_app' : 'no_plan',
+        message: assignedInApp
+          ? "The current plan is being done by Harness's own agents. Draft a new plan to hand work to this tool."
+          : 'There is no plan to work from. Ask for one with draft_plan first.',
+      };
+    }
+    const baseCommit = await headCommit(folder);
+    let takenId: AgentTask['id'] | undefined;
+    this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      if (plan) {
+        const proposal = this.openPlanProposal(projection);
+        const coordinator = Object.values(projection.threads).find(
+          (thread) => thread.kind === 'coordinator',
+        )!;
+        if (proposal && proposal.payload.planId === plan.id) {
+          batch.emit(
+            'proposal.decided',
+            {
+              proposalId: proposal.id,
+              from: 'open',
+              to: 'approved',
+              note: `Approved in ${command.client}.`,
+            },
+            { threadId: coordinator.id, source: 'user' },
+          );
+        }
+        this.disperse(
+          batch,
+          projectId,
+          safe(command.commandId),
+          plan,
+          proposal && proposal.payload.planId === plan.id
+            ? proposal.id
+            : undefined,
+          { client: command.client },
+        );
+      }
+      const next = Object.values(batch.current.tasks)
+        .filter(
+          (task) =>
+            task.outside && task.state === 'working' && !task.outside.takenAt,
+        )
+        .sort((a, b) => a.createdAtSequence - b.createdAtSequence)[0];
+      if (!next) {
+        throw new ProjectCommandError(
+          'invalid_transition',
+          'The plan was handed over, but no task in it is ready to start.',
+        );
+      }
+      const agent = batch.current.agents[next.agentId]!;
+      batch.emit(
+        'task.taken',
+        {
+          taskId: next.id,
+          client: command.client,
+          ...(baseCommit ? { baseCommit } : {}),
+        },
+        {
+          agentId: agent.id,
+          taskId: next.id,
+          source: 'agent',
+          adapter: OUTSIDE_ADAPTER,
+        },
+      );
+      batch.post(
+        batch.current.threads[agent.threadId]!,
+        agentAuthor(agent, OUTSIDE_ADAPTER),
+        `${command.client} took this task.`,
+        'chat',
+        { taskId: next.id },
+      );
+      takenId = next.id;
+      return batch.commit();
+    });
+    const after = this.requireProjection(projectId);
+    return this.outsideOffer(after, after.tasks[takenId!]!, 'taken');
+  }
+
+  private outsideOffer(
+    projection: ProjectProjection,
+    task: AgentTask,
+    status: 'taken' | 'continuing',
+  ): OutsideTake {
+    const overview = Object.entries(projection.brief.fields).flatMap(
+      ([id, field]) => {
+        const value = (field as { value?: unknown }).value;
+        return typeof value === 'string' && value.trim()
+          ? [`${OVERVIEW_LABELS[id] ?? id}: ${value.trim()}`]
+          : [];
+      },
+    );
+    const upstream = task.dependsOn.flatMap((id) => {
+      const done = projection.tasks[id];
+      if (!done) return [];
+      const output = Object.values(projection.outputs)
+        .filter(
+          (candidate) => candidate.taskId === id && candidate.kind === 'report',
+        )
+        .sort((a, b) => b.producedAtSequence - a.producedAtSequence)[0];
+      return [`${done.title}${output ? ` — ${output.digest}` : ''}`];
+    });
+    return {
+      status,
+      message:
+        status === 'continuing'
+          ? `You already have "${task.title}". Finish it and report it before taking another.`
+          : `Took "${task.title}".`,
+      task: {
+        id: task.id,
+        title: task.title,
+        objective: task.objective,
+        requiredChecks: [...task.requiredChecks],
+        state: task.state,
+      },
+      brief: outsideBrief(task, {
+        projectName: projection.project.name,
+        folder: projection.project.repository?.path ?? '',
+        overview,
+        upstream,
+      }),
+    };
+  }
+
+  // An outside tool says it finished (or could not). What it says is
+  // recorded as its report; what git shows changed is recorded beside it,
+  // file by file, for Review. Done still needs every required check
+  // reported as passing, the same rule harness agents follow.
+  async reportOutsideTask(
+    projectId: ProjectId,
+    taskId: string,
+    command: ReportTaskCommand,
+  ): Promise<OutsideReport> {
+    const before = this.requireProjection(projectId);
+    const task = before.tasks[taskId as AgentTask['id']];
+    if (!task || !task.outside) {
+      throw new ProjectCommandError(
+        'not_found',
+        `No task ${taskId} was handed to an outside tool in this project.`,
+      );
+    }
+    const replayed = this.store.getReceipt(command.commandId);
+    if (!replayed && task.state !== 'working') {
+      throw new ProjectCommandError(
+        'invalid_transition',
+        task.state === 'stopped' || task.state === 'failed'
+          ? `"${task.title}" was ${task.state} in Harness${task.endReason ? `: ${task.endReason}` : ''}. Stop working on it.`
+          : `"${task.title}" is ${task.state.replace('_', ' ')}; there is nothing to report.`,
+      );
+    }
+    if (!replayed && !task.outside.takenAt) {
+      throw new ProjectCommandError(
+        'invalid_transition',
+        `"${task.title}" has not been taken yet. Call next_task first.`,
+      );
+    }
+    const folder = before.project.repository?.path;
+    const changes = folder
+      ? await changesSince(folder, task.outside.baseCommit)
+      : ({ available: false, reason: 'The project has no folder.' } as const);
+    const client = command.client;
+    let comparison = '';
+    this.run(command.commandId, projectId, () => {
+      const projection = this.requireProjection(projectId);
+      const current = projection.tasks[task.id]!;
+      const agent = projection.agents[current.agentId]!;
+      if (current.state !== 'working') {
+        throw new ProjectCommandError(
+          'invalid_transition',
+          `"${current.title}" is ${current.state.replace('_', ' ')}; the report was not recorded.`,
+        );
+      }
+      const batch = new ProjectBatch(
+        this.store,
+        projectId,
+        command.commandId,
+        this.now(),
+        projection,
+      );
+      const suffix = safe(command.commandId);
+      let count = 0;
+      const step = (intent: AgentStepIntent) => {
+        count += 1;
+        this.materializeStep(
+          batch,
+          projectId,
+          batch.current.agents[agent.id]!,
+          batch.current.tasks[task.id]!,
+          intent,
+          `${suffix}_${count}`,
+          OUTSIDE_ADAPTER,
+        );
+      };
+      comparison = compareWithGit(client, changes, command.filesChanged);
+      step({ kind: 'say', body: `${client}: ${command.summary}` });
+      for (const check of command.checks) {
+        const summary =
+          check.output.trim() || (check.passed ? 'Passed.' : 'Failed.');
+        step({
+          kind: check.passed ? 'check_pass' : 'check_fail',
+          name: check.name,
+          command: check.command,
+          summary: summary.slice(0, 600),
+        });
+      }
+      if (changes.available) {
+        for (const file of changes.files) {
+          const { added, removed } = diffCounts(file.diff);
+          step({
+            kind: 'output',
+            outputKind: 'diff',
+            title: file.path.slice(0, 200),
+            digest: `${file.status} · +${added} −${removed}`,
+            location: file.path,
+            ...(file.diff ? { diff: file.diff } : {}),
+          });
+        }
+      }
+      step({
+        kind: 'output',
+        outputKind: 'report',
+        title: `Report from ${client}`,
+        digest: command.summary.slice(0, 600),
+      });
+      step({ kind: 'say', body: comparison });
+      const finish: AgentStepIntent =
+        command.outcome === 'done'
+          ? { kind: 'finish', reason: command.summary.slice(0, 300) }
+          : { kind: 'fail', reason: command.summary.slice(0, 300) };
+      step(this.guardFinish(batch, batch.current.tasks[task.id]!, finish));
+      if (batch.current.tasks[task.id]?.state === 'done') {
+        this.handOff(batch, task.id);
+      }
+      return batch.commit();
+    });
+    const after = this.requireProjection(projectId).tasks[task.id]!;
+    const done = after.state === 'done';
+    return {
+      state: after.state,
+      message: done
+        ? `Recorded "${after.title}" as done. ${comparison}`.trim()
+        : `Recorded "${after.title}" as ${after.state}: ${after.endReason ?? command.summary}. ${comparison}`.trim(),
+      comparison,
+    };
+  }
+
   ensureDemoProject(): ProjectProjection {
     const projectId = ProjectIdSchema.parse('project_harness-demo');
     const existing = this.store.getProjection(projectId);

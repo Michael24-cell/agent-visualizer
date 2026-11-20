@@ -33,6 +33,9 @@ import {
   RenameProjectCommandSchema,
   ArchiveProjectCommandSchema,
   CreateFolderCommandSchema,
+  TakeTaskCommandSchema,
+  ReportTaskCommandSchema,
+  TaskIdSchema,
   SetTrustCommandSchema,
   SetAgentModelCommandSchema,
 } from '@harness/contracts';
@@ -63,6 +66,24 @@ export function registerProjectRoutes(
   const handle = <T>(work: () => T) => {
     try {
       return { ok: true as const, value: work() };
+    } catch (error) {
+      if (error instanceof ProjectCommandError) {
+        return {
+          ok: false as const,
+          status: commandErrorStatus(error.code),
+          body: CommandErrorSchema.parse({
+            error: error.message,
+            code: error.code,
+          }),
+        };
+      }
+      throw error;
+    }
+  };
+
+  const handleAsync = async <T>(work: () => Promise<T>) => {
+    try {
+      return { ok: true as const, value: await work() };
     } catch (error) {
       if (error instanceof ProjectCommandError) {
         return {
@@ -607,6 +628,45 @@ export function registerProjectRoutes(
     if (!result.ok) return reply.code(result.status).send(result.body);
     return reply.code(204).send();
   });
+
+  // For agent tools outside the harness, through the MCP server.
+  service.post(
+    '/api/projects/:projectId/outside/take',
+    async (request, reply) => {
+      const params = ProjectParams.safeParse(request.params);
+      const command = TakeTaskCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('take command'));
+      }
+      const result = await handleAsync(() =>
+        projects.takeOutsideTask(params.data.projectId, command.data),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return result.value;
+    },
+  );
+
+  service.post(
+    '/api/projects/:projectId/outside/tasks/:taskId/report',
+    async (request, reply) => {
+      const params = ProjectParams.extend({
+        taskId: TaskIdSchema,
+      }).safeParse(request.params);
+      const command = ReportTaskCommandSchema.safeParse(request.body);
+      if (!params.success || !command.success) {
+        return reply.code(400).send(invalid('report'));
+      }
+      const result = await handleAsync(() =>
+        projects.reportOutsideTask(
+          params.data.projectId,
+          params.data.taskId,
+          command.data,
+        ),
+      );
+      if (!result.ok) return reply.code(result.status).send(result.body);
+      return result.value;
+    },
+  );
 
   service.post('/api/projects/:projectId/trust', async (request, reply) => {
     const params = ProjectParams.safeParse(request.params);

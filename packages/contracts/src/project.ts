@@ -490,6 +490,20 @@ export const AgentTaskSchema = z
     // Set when an approval was given for the rest of the task: later
     // permission requests run without asking and are logged as activity.
     trusted: z.boolean().optional(),
+    // Done by an agent tool outside the harness (Claude Code, Codex…)
+    // through the MCP server: the harness starts no run for it, and the
+    // tool reports back. takenAt is when the tool picked it up; baseCommit
+    // is HEAD then, so the reported diff covers commits made since.
+    outside: z
+      .strictObject({
+        client: z.string().min(1).max(80),
+        takenAt: z.iso.datetime().optional(),
+        baseCommit: z
+          .string()
+          .regex(/^[0-9a-f]{7,40}$/)
+          .optional(),
+      })
+      .optional(),
     methodSnapshotId: MethodSnapshotIdSchema.optional(),
     originMessageId: MessageIdSchema.optional(),
     createdAtSequence: SequenceSchema,

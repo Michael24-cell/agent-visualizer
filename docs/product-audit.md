@@ -149,8 +149,21 @@ Each is one reviewable change with tests.
    append-only tables, and it is refused while agents are working.
 3. **Tell me when it needs me**: tab title and optional notification on
    ask / done / failed; drop the Refresh button.
-4. **Undo from Review**: snapshot before write, revert a step.
-5. **The model as Planner** on live runtimes, simulator as fallback.
+4. **Other agent tools can use it (MCP server).** A small local
+   program that Claude Code, Codex or Cursor start themselves; it passes
+   their calls to this service on the same computer. No hosting, no new
+   database. First version plans only: `get_overview`, `draft_plan`,
+   `get_plan`, `next_task`, `report_task_done`, with each reported task
+   checked against the real git diff. Limits to say plainly: the agent
+   decides when to call these, so an approval asked this way is a
+   courtesy, not a lock; the agent tool's own permissions still guard.
+   Watching outside agents (Claude Code hooks, Codex session logs) is a
+   separate step after this. _Built 2026-11-19_ (`apps/mcp`,
+   `apps/service/src/outside.ts`, setup in `docs/mcp.md`); the tool is
+   `report_task` with done or failed. Not yet tried with a real Claude
+   Code session.
+5. **Undo from Review**: snapshot before write, revert a step.
+6. **The model as Planner** on live runtimes, simulator as fallback.
    _Started 2026-11-18:_ drafting, revising and "go ahead" plans now ask
    the connected model (`apps/service/src/model-planner.ts`); any failure
    falls back to the built-in plan and the reply says why.
@@ -158,13 +171,15 @@ Each is one reviewable change with tests.
    document edits are still keyword rules. Measured by
    `npm run eval:planner` (12 cases in `evals/planner/cases.json`): the
    built-in planner scores 64%; `-- --model` scores the connected model
-   on the same cases.
-6. **Triage and model fit**, with the toggle, recorded against outcomes.
-7. **Running cost and a ceiling.**
-8. **Claude parity**, then **worktrees per agent**.
-9. **Clean-out**: dead CSS and the demo path, README rewritten, one
-   end-to-end test in CI.
-10. **Package it**: `npx`, then a desktop app.
+   on the same cases. First model run (2026-11-18, gpt-oss-120b on an
+   OpenAI-compatible endpoint): 98%, no fallbacks; one case split into
+   three tasks where two were allowed.
+7. **Triage and model fit**, with the toggle, recorded against outcomes.
+8. **Running cost and a ceiling.**
+9. **Claude parity**, then **worktrees per agent**.
+10. **Clean-out**: dead CSS and the demo path, README rewritten, one
+    end-to-end test in CI.
+11. **Package it**: `npx`, then a desktop app.
 
-Items 2–4 make it a product a stranger can use. Items 5–8 make it good.
-Items 9–10 make it shippable.
+Items 2–5 make it a product a stranger can use. Items 6–9 make it good.
+Items 10–11 make it shippable.

@@ -94,9 +94,10 @@ export type RuntimeConfig =
       readonly tools: 'basic' | 'full';
     };
 
-function defaultDataDirectory(
-  environment: z.infer<typeof EnvironmentSchema>,
-): string {
+function defaultDataDirectory(environment: {
+  readonly LOCALAPPDATA?: string | undefined;
+  readonly XDG_DATA_HOME?: string | undefined;
+}): string {
   if (process.platform === 'darwin') {
     return join(
       homedir(),
@@ -114,6 +115,14 @@ function defaultDataDirectory(
     environment.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'),
     'visual-agent-harness',
   );
+}
+
+// Where the service keeps its data, for other local programs (the MCP
+// server) that need to find it without loading the whole config.
+export function harnessDataDirectory(
+  source: NodeJS.ProcessEnv = process.env,
+): string {
+  return source.HARNESS_DATA_DIR || defaultDataDirectory(source);
 }
 
 export function loadAppConfig(

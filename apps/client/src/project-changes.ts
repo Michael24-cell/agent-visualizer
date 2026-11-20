@@ -154,7 +154,9 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
         entries.push({
           ...base,
           kind: 'task',
-          title: `Started “${task.title}”`,
+          title: task.outside
+            ? `Handed “${task.title}” to ${task.outside.client}`
+            : `Started “${task.title}”`,
           ...(agentNames.get(task.agentId)
             ? { detail: agentNames.get(task.agentId)! }
             : {}),
@@ -162,6 +164,13 @@ export function buildChanges(events: readonly ProjectEvent[]): ChangeEntry[] {
         });
         break;
       }
+      case 'task.taken':
+        entries.push({
+          ...base,
+          kind: 'task',
+          title: `${event.payload.client} took “${taskTitles.get(event.payload.taskId) ?? 'a task'}”`,
+        });
+        break;
       case 'task.state_changed': {
         const title = taskTitles.get(event.payload.taskId) ?? 'a task';
         if (event.payload.to === 'working') break;

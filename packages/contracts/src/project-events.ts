@@ -236,6 +236,18 @@ export const ProjectEventSchema = z.discriminatedUnion('type', [
     }),
   ),
   projectEvent('output.produced', z.strictObject({ output: OutputSchema })),
+  // An outside agent tool picked up a task handed to it.
+  projectEvent(
+    'task.taken',
+    z.strictObject({
+      taskId: TaskIdSchema,
+      client: z.string().min(1).max(80),
+      baseCommit: z
+        .string()
+        .regex(/^[0-9a-f]{7,40}$/)
+        .optional(),
+    }),
+  ),
   projectEvent('task.tool_used', z.strictObject({ activity: ActivitySchema })),
   // One model turn's tokens. Reported per turn so a run that is stopped
   // or crashes still keeps what it spent.

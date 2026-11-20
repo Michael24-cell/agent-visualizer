@@ -85,6 +85,37 @@ export const ArchiveProjectCommandSchema = z.strictObject({
 });
 
 // A new, empty folder inside `parent`, which must be under the allowed root.
+// An agent tool outside the harness, through the MCP server. client is
+// its name as shown in panes ("Claude Code").
+const OutsideClientSchema = z.string().trim().min(1).max(80);
+
+export const TakeTaskCommandSchema = z.strictObject({
+  commandId: CommandIdSchema,
+  client: OutsideClientSchema,
+});
+
+export const OUTSIDE_CHECKS_MAX = 20;
+
+export const ReportTaskCommandSchema = z.strictObject({
+  commandId: CommandIdSchema,
+  client: OutsideClientSchema,
+  outcome: z.enum(['done', 'failed']),
+  summary: z.string().trim().min(1).max(4_000),
+  checks: z
+    .array(
+      z.strictObject({
+        name: z.string().trim().min(1).max(80),
+        command: z.string().trim().min(1).max(500),
+        passed: z.boolean(),
+        output: z.string().max(4_000).default(''),
+      }),
+    )
+    .max(OUTSIDE_CHECKS_MAX)
+    .default([]),
+  // What the tool says it changed; compared with what git shows.
+  filesChanged: z.array(z.string().trim().min(1).max(500)).max(500).optional(),
+});
+
 export const CreateFolderCommandSchema = z.strictObject({
   parent: z.string().min(1),
   name: z
@@ -335,6 +366,8 @@ export type RenameAgentCommand = z.infer<typeof RenameAgentCommandSchema>;
 export type RenameProjectCommand = z.infer<typeof RenameProjectCommandSchema>;
 export type ArchiveProjectCommand = z.infer<typeof ArchiveProjectCommandSchema>;
 export type CreateFolderCommand = z.infer<typeof CreateFolderCommandSchema>;
+export type TakeTaskCommand = z.infer<typeof TakeTaskCommandSchema>;
+export type ReportTaskCommand = z.output<typeof ReportTaskCommandSchema>;
 export type SetTrustCommand = z.infer<typeof SetTrustCommandSchema>;
 export type MethodResetCommand = z.infer<typeof MethodResetCommandSchema>;
 export type PlanSectionCommand = z.infer<typeof PlanSectionCommandSchema>;

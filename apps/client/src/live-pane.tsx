@@ -860,6 +860,9 @@ export function LivePane({
       : undefined;
   const canStop =
     work !== undefined && ['waiting', 'working', 'needs_you'].includes(work);
+  // Done by an agent tool outside the harness, through the MCP server.
+  const outside =
+    canStop && currentTask?.outside ? currentTask.outside : undefined;
   // The Method the current task runs under, pinned when it started.
   const snapshot = currentTask?.methodSnapshotId
     ? project.projection.methodSnapshots[currentTask.methodSnapshotId]
@@ -992,6 +995,16 @@ export function LivePane({
             {methodChip.label}
           </span>
         ) : null}
+        {outside ? (
+          <span
+            className="pane-outside"
+            title={`${outside.client} is doing this task outside the harness and reports back here.`}
+          >
+            {outside.takenAt
+              ? `With ${outside.client}`
+              : `Ready for ${outside.client}`}
+          </span>
+        ) : null}
         {work ? (
           <span className={`pane-state work-${work}`}>
             {workLabels[work]}
@@ -999,7 +1012,7 @@ export function LivePane({
             {work === 'working' && lastTool ? ` · ${lastTool}` : ''}
           </span>
         ) : null}
-        {work === 'working' && project.runtime.mode !== 'live' ? (
+        {work === 'working' && !outside && project.runtime.mode !== 'live' ? (
           <button
             type="button"
             className="secondary-action small"

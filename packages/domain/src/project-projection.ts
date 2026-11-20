@@ -1305,6 +1305,40 @@ export function applyProjectEvent(
       break;
     }
 
+    case 'task.taken': {
+      const task = requireTask(next, event.payload.taskId);
+      if (!task.outside) {
+        throw new ProjectionError(
+          'invalid_payload',
+          `Task ${task.id} was not handed to an outside tool.`,
+        );
+      }
+      if (task.outside.takenAt) {
+        throw new ProjectionError(
+          'duplicate_entity',
+          `Task ${task.id} was already taken by ${task.outside.client}.`,
+        );
+      }
+      if (task.state !== 'working') {
+        throw new ProjectionError(
+          'state_mismatch',
+          `Task is ${task.state}, not working.`,
+        );
+      }
+      next.tasks[task.id] = {
+        ...task,
+        outside: {
+          client: event.payload.client,
+          takenAt: event.occurredAt,
+          ...(event.payload.baseCommit
+            ? { baseCommit: event.payload.baseCommit }
+            : {}),
+        },
+      };
+      targets.task(task.id);
+      break;
+    }
+
     case 'task.tool_used': {
       const activity = event.payload.activity;
       assertProject(next, activity.projectId);

@@ -593,7 +593,10 @@ export interface CommitFile {
 }
 
 // git with fixed arguments, no shell, inside the folder, limited to it.
-async function git(root: string, args: readonly string[]): Promise<string> {
+export async function git(
+  root: string,
+  args: readonly string[],
+): Promise<string> {
   const { stdout } = await run(
     'git',
     ['-c', 'core.quotepath=off', '--no-pager', ...args],
@@ -608,7 +611,7 @@ async function git(root: string, args: readonly string[]): Promise<string> {
 }
 
 // Why git could not answer, in a sentence, from what it printed.
-function gitReason(error: unknown): string {
+export function gitReason(error: unknown): string {
   const failure = error as NodeJS.ErrnoException & {
     stderr?: string;
     killed?: boolean;

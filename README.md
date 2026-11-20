@@ -62,6 +62,10 @@ Agents run on Claude when `ANTHROPIC_API_KEY` is set in the shell that starts th
 
 `HARNESS_RUNTIME=local` runs agent tasks on any OpenAI-compatible chat endpoint through `@harness/runtime-openai`, which owns a small tool loop (read, list, search, run command, edit, write; every path confined to the attached folder) and emits the same events as the other runtimes. Defaults target Ollama: `HARNESS_LOCAL_BASE_URL=http://127.0.0.1:11434/v1`, `HARNESS_LOCAL_MODEL=qwen2.5-coder:7b`; set `HARNESS_LOCAL_API_KEY` for hosted endpoints (Groq, Gemini, OpenRouter). All agents share the configured model; the pane header shows its name. Commands and file changes still ask first, and Stop aborts the run.
 
+### Use it from Claude Code, Codex or Cursor (MCP)
+
+`apps/mcp` is a local MCP server: an agent tool starts it (`node apps/mcp/bin/harness-mcp.mjs`) and can then draft a plan with the Planner, take tasks one at a time, and report them back, with each report checked against git. Setup and limits: [docs/mcp.md](docs/mcp.md).
+
 ## Boundaries that must remain stable
 
 - Tasks are durable; runtime processes are replaceable workers.
