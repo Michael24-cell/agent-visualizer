@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -181,18 +181,34 @@ describe('draftPlan', () => {
 });
 
 describe('the Planner on a live account', () => {
-  function setup(planner: ModelPlanner) {
+  function setup(planner: ModelPlanner, options: { folder?: boolean } = {}) {
     const root = mkdtempSync(join(tmpdir(), 'visual-agent-planner-'));
     temporaryDirectories.push(root);
     const database = openHarnessDatabase(join(root, 'test.db'));
     const service = new ProjectService(
       new SqliteProjectStore(database.database),
-      { folders: { root }, runtime: { mode: 'live' }, planner },
+      {
+        folders: { root },
+        runtime: { mode: 'live' },
+        planner,
+        // Assigned tasks would start runs; these go nowhere.
+        runner: () => ({
+          done: Promise.resolve(),
+          stop() {},
+          send: () => false,
+        }),
+      },
     );
+    let repositoryPath: string | undefined;
+    if (options.folder) {
+      repositoryPath = join(root, 'billing');
+      mkdirSync(repositoryPath);
+    }
     const created = service.createProject(
       CreateProjectCommandSchema.parse({
         commandId: commandId(),
         name: 'Billing',
+        ...(repositoryPath ? { repositoryPath } : {}),
       }),
     );
     return { service, projectId: created.project.projection.projectId };
@@ -279,6 +295,44 @@ describe('the Planner on a live account', () => {
     ]);
     expect(last).toMatch(
       /Plan v2 replaces v1: 1 task\..*Drafted by gpt-test\./,
+    );
+  });
+
+  it('gives two tasks in the same lane their own agents, so the plan can be assigned', async () => {
+    const both = JSON.stringify({
+      tasks: [
+        {
+          title: 'Find why refresh logs people out',
+          objective: 'Reproduce and explain.',
+          lane: 'orchestration',
+        },
+        {
+          title: 'Keep the session across refresh',
+          objective: 'Fix it.',
+          lane: 'orchestration',
+          dependsOn: [0],
+        },
+      ],
+      whyThisMany: 'Find it, then fix it.',
+    });
+    const { service, projectId } = setup(fake(both, 'gpt-test'), {
+      folder: true,
+    });
+    const { plan } = await ask(service, projectId, 'Fix the logout on refresh');
+    expect(plan?.tasks.map((task) => task.agentName)).toEqual([
+      'Backend orchestration',
+      'Backend orchestration 2',
+    ]);
+    const { last } = await ask(service, projectId, 'go ahead');
+    expect(last).toMatch(/^Assigned plan v1/);
+    const agents = Object.values(
+      service.getProject(projectId).projection.agents,
+    );
+    expect(agents.map((agent) => agent.name)).toEqual(
+      expect.arrayContaining([
+        'Backend orchestration',
+        'Backend orchestration 2',
+      ]),
     );
   });
 

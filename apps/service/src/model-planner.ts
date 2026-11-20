@@ -166,16 +166,23 @@ export function parseModelPlan(
   if (!parsed.success) {
     return { ok: false, reason: 'the answer did not have the plan shape' };
   }
+  // An agent does one task at a time, so two tasks in the same lane get
+  // two agents ("Interface systems", "Interface systems 2"); otherwise
+  // assigning the plan would find the first one busy.
+  const perLane = new Map<string, number>();
   const tasks: PlanTask[] = parsed.data.tasks.map((task, index) => {
     const dependsOn = [...new Set(task.dependsOn)].filter(
       (other) => other < index,
     );
-    return laneTask(task.lane, {
+    const row = laneTask(task.lane, {
       title: clip(task.title.replace(/\.$/, ''), 200),
       objective: clip(task.objective, 2_000),
       dependsOn,
       checks: task.checks,
     });
+    const seen = (perLane.get(task.lane) ?? 0) + 1;
+    perLane.set(task.lane, seen);
+    return seen > 1 ? { ...row, agentName: `${row.agentName} ${seen}` } : row;
   });
   return {
     ok: true,
